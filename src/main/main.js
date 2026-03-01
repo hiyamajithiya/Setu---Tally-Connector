@@ -85,7 +85,7 @@ function getApiHeaders() {
 
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${authToken}`  // JWT tokens use Bearer prefix
+    'Authorization': `Bearer ${authToken}`
   };
 
   if (organizationId) {
@@ -95,47 +95,120 @@ function getApiHeaders() {
   return headers;
 }
 
-// Helper function to fetch and store organization ID from profile if missing
-async function ensureOrganizationId() {
-  let organizationId = store.get('organizationId');
+// JWT Token Refresh Logic
+let isRefreshing = false;
+let refreshPromise = null;
 
-  if (organizationId) {
-    return organizationId;
-  }
-
-  // Try to fetch from profile endpoint
+async function refreshAuthToken() {
   const serverUrl = store.get('serverUrl');
-  const authToken = store.get('authToken');
+  const refreshToken = store.get('refreshToken');
 
-  if (!serverUrl || !authToken) {
-    return null;
+  if (!serverUrl || !refreshToken) {
+    return false;
   }
 
   try {
-    const response = await fetch(`${serverUrl}/api/profile/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`  // JWT tokens use Bearer prefix
-      }
+    const response = await fetch(`${serverUrl}/api/token/refresh/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: refreshToken })
     });
 
     if (response.ok) {
       const data = await response.json();
-      if (data.organization_id) {
-        store.set('organizationId', data.organization_id);
-        store.set('organizationName', data.organization_name || '');
-        console.log(`[INFO] Fetched organization ID from profile: ${data.organization_id}`);
-        return data.organization_id;
+      store.set('authToken', data.access);
+      if (data.refresh) {
+        store.set('refreshToken', data.refresh);
       }
+      if (logger) logger.info('JWT token refreshed successfully');
+      return true;
     } else {
-      console.error(`[ERROR] Profile fetch failed: ${response.status}`);
+      if (logger) logger.error(`Token refresh failed: HTTP ${response.status}`);
+      return false;
     }
   } catch (error) {
-    console.error('[ERROR] Failed to fetch organization ID from profile:', error.message);
+    if (logger) logger.error('Token refresh error:', error.message);
+    return false;
+  }
+}
+
+// Deduplicated refresh - prevents multiple concurrent refresh calls
+async function ensureValidToken() {
+  if (isRefreshing) {
+    return refreshPromise;
+  }
+  isRefreshing = true;
+  refreshPromise = refreshAuthToken().finally(() => {
+    isRefreshing = false;
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+// Fetch wrapper that auto-refreshes token on 401
+async function fetchWithAuth(url, options = {}) {
+  options.headers = { ...getApiHeaders(), ...(options.headers || {}) };
+
+  let response = await fetch(url, options);
+
+  if (response.status === 401) {
+    const refreshed = await ensureValidToken();
+    if (refreshed) {
+      // Retry with new token
+      options.headers = { ...getApiHeaders(), ...(options.headers || {}) };
+      response = await fetch(url, options);
+    } else {
+      // Token refresh failed - notify renderer to show login
+      sendToRenderer('auth-expired', { message: 'Session expired. Please log in again.' });
+    }
   }
 
-  return null;
+  return response;
+}
+
+// Helper function to fetch and store organization ID from profile if missing
+// Deduplicated to prevent race conditions from concurrent calls
+let orgIdPromise = null;
+
+async function ensureOrganizationId() {
+  let organizationId = store.get('organizationId');
+  if (organizationId) return organizationId;
+
+  // Deduplicate concurrent calls
+  if (orgIdPromise) return orgIdPromise;
+
+  orgIdPromise = (async () => {
+    const serverUrl = store.get('serverUrl');
+    const authToken = store.get('authToken');
+
+    if (!serverUrl || !authToken) return null;
+
+    try {
+      const response = await fetchWithAuth(`${serverUrl}/api/profile/`, {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.organization_id) {
+          store.set('organizationId', data.organization_id);
+          store.set('organizationName', data.organization_name || '');
+          if (logger) logger.info(`Fetched organization ID from profile: ${data.organization_id}`);
+          return data.organization_id;
+        }
+      } else {
+        if (logger) logger.error(`Profile fetch failed: ${response.status}`);
+      }
+    } catch (error) {
+      if (logger) logger.error('Failed to fetch organization ID from profile:', error.message);
+    }
+
+    return null;
+  })().finally(() => {
+    orgIdPromise = null;
+  });
+
+  return orgIdPromise;
 }
 
 let mainWindow = null;
@@ -893,9 +966,8 @@ ipcMain.handle('get-ledger-mappings', async () => {
     }
 
     const headers = getApiHeaders();
-    const response = await fetch(`${serverUrl}/api/tally-sync/mappings/`, {
-      method: 'GET',
-      headers: headers
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/mappings/`, {
+      method: 'GET'
     });
 
     if (!response.ok) {
@@ -915,48 +987,53 @@ ipcMain.handle('get-ledger-mappings', async () => {
   }
 });
 
-// Save ledger mappings to server
+// Save ledger mappings to server (with validation against Tally)
 ipcMain.handle('save-ledger-mappings', async (event, mappings) => {
   try {
     const serverUrl = store.get('serverUrl');
-    const authToken = store.get('authToken');
 
     if (!serverUrl) {
       throw new Error('Server URL not found. Please log in again.');
     }
 
-    // Ensure we have organization ID (fetch from profile if missing)
     const organizationId = await ensureOrganizationId();
-
-    logger.info(`Saving ledger mappings - serverUrl: ${serverUrl}, orgId: ${organizationId}, hasToken: ${!!authToken}`);
-
     if (!organizationId) {
       throw new Error('Organization ID not found. Please log out and log in again.');
     }
 
-    const headers = getApiHeaders();
-    logger.info(`Request headers: ${JSON.stringify(Object.keys(headers))}`);
+    // Validate mapped ledgers exist in Tally
+    const warnings = [];
+    try {
+      const tallyLedgers = await tallyConnector.getLedgers();
+      const ledgerNames = new Set(tallyLedgers.map(l => l.name.toLowerCase()));
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/mappings/`, {
+      const ledgerFields = ['salesLedger', 'cgstLedger', 'sgstLedger', 'igstLedger', 'roundOffLedger'];
+      for (const field of ledgerFields) {
+        if (mappings[field] && !ledgerNames.has(mappings[field].toLowerCase())) {
+          warnings.push(`${field}: "${mappings[field]}" not found in Tally`);
+        }
+      }
+    } catch (error) {
+      logger.warn('Could not validate mappings against Tally:', error.message);
+    }
+
+    logger.info(`Saving ledger mappings to server`);
+
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/mappings/`, {
       method: 'POST',
-      headers: headers,
       body: JSON.stringify(mappings)
     });
-
-    logger.info(`Response status: ${response.status}`);
 
     if (!response.ok) {
       const errText = await response.text();
       logger.error(`Save mappings error response: ${errText}`);
       let errData = {};
-      try {
-        errData = JSON.parse(errText);
-      } catch (e) {}
-      throw new Error(errData.error || errData.detail || `HTTP ${response.status}: ${errText.substring(0, 100)}`);
+      try { errData = JSON.parse(errText); } catch (e) {}
+      throw new Error(errData.error || errData.detail || `HTTP ${response.status}`);
     }
 
     logger.info('Ledger mappings saved successfully');
-    return { success: true };
+    return { success: true, warnings: warnings.length > 0 ? warnings : undefined };
   } catch (error) {
     logger.error('Failed to save ledger mappings:', error.message);
     return { success: false, error: error.message };
@@ -968,9 +1045,8 @@ ipcMain.handle('sync-invoices', async (event, { startDate, endDate, forceResync 
   try {
     const serverUrl = store.get('serverUrl');
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/sync-invoices/`, {
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-invoices/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({
         start_date: startDate,
         end_date: endDate,
@@ -1019,9 +1095,8 @@ ipcMain.handle('preview-import-clients', async (event, parties) => {
   try {
     const serverUrl = store.get('serverUrl');
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/preview-clients/`, {
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/preview-clients/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({ parties })
     });
 
@@ -1043,9 +1118,8 @@ ipcMain.handle('preview-import-products', async (event, items) => {
   try {
     const serverUrl = store.get('serverUrl');
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/preview-products/`, {
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/preview-products/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({ stock_items: items })
     });
 
@@ -1067,9 +1141,8 @@ ipcMain.handle('import-clients', async (event, parties) => {
   try {
     const serverUrl = store.get('serverUrl');
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/import-clients/`, {
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-clients/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({ parties })
     });
 
@@ -1091,9 +1164,8 @@ ipcMain.handle('import-products', async (event, items) => {
   try {
     const serverUrl = store.get('serverUrl');
 
-    const response = await fetch(`${serverUrl}/api/tally-sync/import-products/`, {
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-products/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({ stock_items: items })
     });
 
@@ -1167,9 +1239,8 @@ ipcMain.handle('perform-realtime-sync', async () => {
 
     // Compare with NexInvo to find what needs syncing
     logger.info(`Sending preview request to ${serverUrl}/api/tally-sync/two-way-preview/ with ${tallyVouchers.length} Tally vouchers`);
-    const previewResponse = await fetch(`${serverUrl}/api/tally-sync/two-way-preview/`, {
+    const previewResponse = await fetchWithAuth(`${serverUrl}/api/tally-sync/two-way-preview/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({
         tally_vouchers: tallyVouchers,
         start_date: startDate,
@@ -1188,7 +1259,6 @@ ipcMain.handle('perform-realtime-sync', async () => {
     const toNexinvo = previewResult.to_nexinvo || [];
     const matched = previewResult.matched || [];
 
-    // Log detailed preview results for debugging
     logger.info(`Preview results: ${toTally.length} to Tally, ${toNexinvo.length} to NexInvo, ${matched.length} matched`);
 
     let toTallyCount = 0;
@@ -1199,9 +1269,8 @@ ipcMain.handle('perform-realtime-sync', async () => {
     if (toTally.length > 0) {
       try {
         const invoiceIds = toTally.map(inv => inv.id);
-        const response = await fetch(`${serverUrl}/api/tally-sync/sync-invoices/`, {
+        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-invoices/`, {
           method: 'POST',
-          headers: getApiHeaders(),
           body: JSON.stringify({ invoice_ids: invoiceIds })
         });
 
@@ -1221,9 +1290,8 @@ ipcMain.handle('perform-realtime-sync', async () => {
     // Sync Tally vouchers to NexInvo (auto-import all missing)
     if (toNexinvo.length > 0) {
       try {
-        const response = await fetch(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
+        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
           method: 'POST',
-          headers: getApiHeaders(),
           body: JSON.stringify({ vouchers: toNexinvo })
         });
 
@@ -1292,9 +1360,8 @@ ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate }) 
     }
 
     // Compare with NexInvo to find what needs syncing
-    const previewResponse = await fetch(`${serverUrl}/api/tally-sync/two-way-preview/`, {
+    const previewResponse = await fetchWithAuth(`${serverUrl}/api/tally-sync/two-way-preview/`, {
       method: 'POST',
-      headers: getApiHeaders(),
       body: JSON.stringify({
         tally_vouchers: tallyVouchers,
         start_date: startDate,
@@ -1340,9 +1407,8 @@ ipcMain.handle('execute-manual-sync', async (event, { toTallyIds, toNexinvoVouch
     if (toTallyIds && toTallyIds.length > 0) {
       try {
         logger.info(`Syncing ${toTallyIds.length} invoices to Tally`);
-        const response = await fetch(`${serverUrl}/api/tally-sync/sync-invoices/`, {
+        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-invoices/`, {
           method: 'POST',
-          headers: getApiHeaders(),
           body: JSON.stringify({ invoice_ids: toTallyIds })
         });
 
@@ -1370,10 +1436,8 @@ ipcMain.handle('execute-manual-sync', async (event, { toTallyIds, toNexinvoVouch
     if (toNexinvoVouchers && toNexinvoVouchers.length > 0) {
       try {
         logger.info(`Syncing ${toNexinvoVouchers.length} vouchers to NexInvo (force_sync=true)`);
-        logger.info(`Vouchers data: ${JSON.stringify(toNexinvoVouchers)}`);
-        const response = await fetch(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
+        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
           method: 'POST',
-          headers: getApiHeaders(),
           body: JSON.stringify({ vouchers: toNexinvoVouchers, force_sync: true })
         });
 

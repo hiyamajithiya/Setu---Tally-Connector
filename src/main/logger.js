@@ -25,9 +25,41 @@ try {
 
 const logFile = path.join(logPath, 'setu.log');
 
+// Log rotation settings
+const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_LOG_FILES = 3; // Keep setu.log, setu.1.log, setu.2.log
+
 // In-memory log storage for UI display
 const recentLogs = [];
 const MAX_RECENT_LOGS = 100;
+
+// Check and rotate log file if needed
+function rotateIfNeeded() {
+  try {
+    if (!fs.existsSync(logFile)) return;
+
+    const stats = fs.statSync(logFile);
+    if (stats.size < MAX_LOG_SIZE) return;
+
+    // Rotate: delete oldest, shift others
+    for (let i = MAX_LOG_FILES - 1; i >= 1; i--) {
+      const older = path.join(logPath, `setu.${i}.log`);
+      const newer = i === 1 ? logFile : path.join(logPath, `setu.${i - 1}.log`);
+
+      if (i === MAX_LOG_FILES - 1 && fs.existsSync(older)) {
+        fs.unlinkSync(older);
+      }
+      if (fs.existsSync(newer)) {
+        fs.renameSync(newer, older);
+      }
+    }
+  } catch (e) {
+    // Silently ignore rotation errors
+  }
+}
+
+// Track writes for periodic rotation check
+let writeCount = 0;
 
 // Simple file logger - NO console output to avoid EPIPE
 function writeToFile(level, message) {
@@ -35,6 +67,12 @@ function writeToFile(level, message) {
   const logLine = `${timestamp} [${level.toUpperCase()}] ${message}\n`;
 
   try {
+    // Check rotation every 100 writes
+    if (++writeCount >= 100) {
+      writeCount = 0;
+      rotateIfNeeded();
+    }
+
     fs.appendFileSync(logFile, logLine);
   } catch (e) {
     // Silently ignore file write errors

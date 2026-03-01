@@ -15,9 +15,9 @@ class TallyConnector {
   }
 
   /**
-   * Send XML request to Tally
+   * Send XML request to Tally (single attempt)
    */
-  async sendRequest(xmlData) {
+  _sendRequestOnce(xmlData) {
     return new Promise((resolve, reject) => {
       const options = {
         hostname: this.host,
@@ -44,7 +44,6 @@ class TallyConnector {
       });
 
       req.on('error', (error) => {
-        logger.error('Tally request error:', error.message);
         reject(new Error(`Failed to connect to Tally: ${error.message}`));
       });
 
@@ -56,6 +55,34 @@ class TallyConnector {
       req.write(xmlData);
       req.end();
     });
+  }
+
+  /**
+   * Send XML request to Tally with retry and exponential backoff
+   */
+  async sendRequest(xmlData, maxRetries = 2) {
+    let lastError;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this._sendRequestOnce(xmlData);
+      } catch (error) {
+        lastError = error;
+        const isRetryable = error.message.includes('timeout') ||
+                            error.message.includes('ECONNRESET') ||
+                            error.message.includes('ECONNREFUSED');
+
+        if (attempt < maxRetries && isRetryable) {
+          const delay = Math.pow(2, attempt) * 1000; // 1s, 2s
+          logger.warn(`Tally request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          logger.error('Tally request error:', error.message);
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   /**
@@ -157,14 +184,7 @@ class TallyConnector {
       const response = await this.sendRequest(xml);
       logger.info('Tally getLedgers response length:', response ? response.length : 0);
 
-      // Save response to file for debugging
-      const fs = require('fs');
-      const path = require('path');
-      const debugPath = path.join(require('os').homedir(), 'tally_ledgers_response.xml');
-      fs.writeFileSync(debugPath, response, 'utf8');
-      logger.info('Saved response to:', debugPath);
-
-      const ledgers = this.parseLedgersResponse(response);
+      const ledgers = await this.parseLedgersResponse(response);
       logger.info(`Parsed ${ledgers.length} ledgers from Tally`);
       return ledgers;
     } catch (error) {
@@ -174,30 +194,69 @@ class TallyConnector {
   }
 
   /**
-   * Parse ledgers from Tally response
+   * Parse ledgers from Tally response using xml2js
    */
-  parseLedgersResponse(xmlResponse) {
+  async parseLedgersResponse(xmlResponse) {
     const ledgers = [];
 
-    // Tally TDL Collection format:
-    // <LEDGER NAME="LedgerName" RESERVEDNAME="">
-    //   <PARENT TYPE="String">GroupName</PARENT>
-    // </LEDGER>
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
 
-    // Pattern to match LEDGER with NAME attribute and PARENT with TYPE attribute
-    const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>[\s\S]*?<PARENT[^>]*>([^<]*)<\/PARENT>/gi;
+      // Navigate to ledger collection - handle various Tally response structures
+      let ledgerList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body.IMPORTDATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          ledgerList = coll.LEDGER || [];
+        } else if (collection.LEDGER) {
+          ledgerList = collection.LEDGER || [];
+        }
+      }
 
-    let match;
-    while ((match = pattern.exec(xmlResponse)) !== null) {
-      const name = this.decodeXmlEntities(match[1]).trim();
-      const group = this.decodeXmlEntities(match[2]).trim();
-      if (name) {
-        ledgers.push({ name, group });
+      if (!Array.isArray(ledgerList)) ledgerList = [ledgerList];
+
+      for (const ledger of ledgerList) {
+        const name = (ledger.$ && ledger.$.NAME) || this.getXml2jsValue(ledger.NAME) || '';
+        const group = this.getXml2jsValue(ledger.PARENT) || '';
+        if (name.trim()) {
+          ledgers.push({ name: name.trim(), group: group.trim() });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed, falling back to regex:', error.message);
+      // Fallback to regex for resilience
+      const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>[\s\S]*?<PARENT[^>]*>([^<]*)<\/PARENT>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const group = this.decodeXmlEntities(match[2]).trim();
+        if (name) ledgers.push({ name, group });
       }
     }
 
-    logger.info(`Parsed ${ledgers.length} ledgers, first few:`, JSON.stringify(ledgers.slice(0, 5)));
+    logger.info(`Parsed ${ledgers.length} ledgers`);
     return ledgers;
+  }
+
+  /**
+   * Helper to extract text value from xml2js parsed node
+   */
+  getXml2jsValue(node) {
+    if (!node) return '';
+    if (typeof node === 'string') return node;
+    if (Array.isArray(node)) {
+      const item = node[0];
+      if (typeof item === 'string') return item;
+      if (item && item._) return item._;
+      if (item && typeof item === 'object') return item._ || '';
+      return '';
+    }
+    if (node._) return node._;
+    return '';
   }
 
   /**
@@ -232,39 +291,67 @@ class TallyConnector {
   }
 
   /**
-   * Create or verify party ledger exists
+   * Create or verify party ledger exists (uses exact name matching via TDL)
    */
   async ensurePartyLedger(client, mapping) {
     const partyName = client.name;
-    const parentGroup = mapping.defaultPartyGroup || 'Sundry Debtors';
 
-    // Check if ledger exists
-    const checkXml = `<?xml version="1.0" encoding="UTF-8"?>
+    // Use TDL collection with exact name filter for reliable check
+    const checkXml = `<?xml version="1.0" encoding="utf-8"?>
 <ENVELOPE>
   <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>CheckLedger</ID>
   </HEADER>
   <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>Ledger</REPORTNAME>
-        <STATICVARIABLES>
-          <LEDGERNAME>${this.escapeXml(partyName)}</LEDGERNAME>
-        </STATICVARIABLES>
-      </REQUESTDESC>
-    </EXPORTDATA>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="CheckLedger">
+            <TYPE>Ledger</TYPE>
+            <FILTER>LedgerNameFilter</FILTER>
+            <FETCH>NAME</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="LedgerNameFilter">
+            $NAME = "${this.escapeXml(partyName)}"
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
   </BODY>
 </ENVELOPE>`;
 
     try {
       const response = await this.sendRequest(checkXml);
 
-      // If ledger doesn't exist, create it
-      if (!response.includes(partyName) || response.includes('does not exist')) {
+      // Parse response to check if exact ledger was found
+      const parsed = await this.parseXmlResponse(response);
+      const envelope = parsed.ENVELOPE || parsed;
+      let found = false;
+
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          found = !!(coll.LEDGER);
+        } else if (collection.LEDGER) {
+          found = true;
+        }
+      }
+
+      if (!found) {
         await this.createPartyLedger(client, mapping);
       }
     } catch (error) {
       // Ledger might not exist, try to create it
+      logger.warn(`Could not verify ledger "${partyName}", attempting creation:`, error.message);
       await this.createPartyLedger(client, mapping);
     }
   }
@@ -442,32 +529,36 @@ class TallyConnector {
   }
 
   /**
-   * Calculate GST based on state codes
+   * Calculate GST - uses actual amounts from NexInvo if available,
+   * falls back to state-code based calculation
    */
   calculateGst(invoice, mapping) {
+    // Use actual CGST/SGST/IGST from NexInvo if available
+    const cgstFromInvoice = parseFloat(invoice.cgst_amount) || 0;
+    const sgstFromInvoice = parseFloat(invoice.sgst_amount) || 0;
+    const igstFromInvoice = parseFloat(invoice.igst_amount) || 0;
+
+    if (cgstFromInvoice > 0 || sgstFromInvoice > 0 || igstFromInvoice > 0) {
+      return {
+        cgst: cgstFromInvoice,
+        sgst: sgstFromInvoice,
+        igst: igstFromInvoice
+      };
+    }
+
+    // Fallback: calculate from total tax_amount using GSTIN state codes
     const taxAmount = parseFloat(invoice.tax_amount) || 0;
+    if (taxAmount === 0) return { cgst: 0, sgst: 0, igst: 0 };
 
-    // Get state codes (first 2 digits of GSTIN)
     const companyStateCode = mapping.companyGstin ? mapping.companyGstin.substring(0, 2) : '';
-    const clientStateCode = invoice.client.gstin ? invoice.client.gstin.substring(0, 2) : '';
+    const clientStateCode = invoice.client && invoice.client.gstin ? invoice.client.gstin.substring(0, 2) : '';
 
-    // Determine if inter-state or intra-state
     const isInterState = companyStateCode && clientStateCode && companyStateCode !== clientStateCode;
 
     if (isInterState) {
-      // Inter-state: 100% IGST
-      return {
-        cgst: 0,
-        sgst: 0,
-        igst: taxAmount
-      };
+      return { cgst: 0, sgst: 0, igst: taxAmount };
     } else {
-      // Intra-state: 50% CGST + 50% SGST
-      return {
-        cgst: taxAmount / 2,
-        sgst: taxAmount / 2,
-        igst: 0
-      };
+      return { cgst: taxAmount / 2, sgst: taxAmount / 2, igst: 0 };
     }
   }
 
@@ -499,33 +590,58 @@ class TallyConnector {
   }
 
   /**
-   * Check if a voucher already exists in Tally
+   * Check if a voucher already exists in Tally (exact match via TDL filter)
    */
   async checkVoucherExists(voucherNumber, voucherDate) {
     const formattedDate = this.formatTallyDate(voucherDate);
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
 <ENVELOPE>
   <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>CheckVoucher</ID>
   </HEADER>
   <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>Voucher Register</REPORTNAME>
-        <STATICVARIABLES>
-          <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
-          <SVFROMDATE>${formattedDate}</SVFROMDATE>
-          <SVTODATE>${formattedDate}</SVTODATE>
-        </STATICVARIABLES>
-      </REQUESTDESC>
-    </EXPORTDATA>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${formattedDate}</SVFROMDATE>
+        <SVTODATE>${formattedDate}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="CheckVoucher">
+            <TYPE>Voucher</TYPE>
+            <FILTER>VoucherMatchFilter</FILTER>
+            <FETCH>VOUCHERNUMBER</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="VoucherMatchFilter">
+            $VOUCHERTYPENAME = "Sales" AND $VOUCHERNUMBER = "${this.escapeXml(voucherNumber)}"
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
   </BODY>
 </ENVELOPE>`;
 
     try {
       const response = await this.sendRequest(xml);
-      return response.includes(voucherNumber);
+      const parsed = await this.parseXmlResponse(response);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          return !!(coll.VOUCHER);
+        }
+        return !!(collection.VOUCHER);
+      }
+      return false;
     } catch (error) {
       logger.warn('Could not check voucher existence:', error.message);
       return false;
@@ -621,31 +737,75 @@ class TallyConnector {
 </ENVELOPE>`;
     try {
       const response = await this.sendRequest(xml);
-      return this.parsePartiesResponse(response);
+      return await this.parsePartiesResponse(response);
     } catch (error) {
       logger.error("Failed to get parties:", error);
       throw error;
     }
   }
 
-  parsePartiesResponse(xmlResponse) {
+  async parsePartiesResponse(xmlResponse) {
     const parties = [];
-    const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/LEDGER>/gi;
-    let match;
-    while ((match = pattern.exec(xmlResponse)) !== null) {
-      const name = this.decodeXmlEntities(match[1]).trim();
-      const content = match[2];
-      if (name) {
-        parties.push({
-          name: name,
-          group: this.extractTagValue(content, "PARENT"),
-          address: this.extractTagValue(content, "ADDRESS"),
-          state: this.extractTagValue(content, "LEDSTATENAME"),
-          pincode: this.extractTagValue(content, "PINCODE"),
-          phone: this.extractTagValue(content, "LEDGERPHONE") || this.extractTagValue(content, "LEDGERMOBILE"),
-          email: this.extractTagValue(content, "EMAIL"),
-          gstin: this.extractTagValue(content, "PARTYGSTIN")
-        });
+
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let ledgerList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          ledgerList = coll.LEDGER || [];
+        } else if (collection.LEDGER) {
+          ledgerList = collection.LEDGER || [];
+        }
+      }
+
+      if (!Array.isArray(ledgerList)) ledgerList = [ledgerList];
+
+      for (const ledger of ledgerList) {
+        const name = (ledger.$ && ledger.$.NAME) || this.getXml2jsValue(ledger.NAME) || '';
+        if (name.trim()) {
+          // Extract address from ADDRESS.LIST if present
+          let address = '';
+          if (ledger['ADDRESS.LIST']) {
+            const addrList = Array.isArray(ledger['ADDRESS.LIST']) ? ledger['ADDRESS.LIST'][0] : ledger['ADDRESS.LIST'];
+            address = this.getXml2jsValue(addrList.ADDRESS) || '';
+          }
+
+          parties.push({
+            name: name.trim(),
+            group: this.getXml2jsValue(ledger.PARENT) || '',
+            address: address,
+            state: this.getXml2jsValue(ledger.LEDSTATENAME) || '',
+            pincode: this.getXml2jsValue(ledger.PINCODE) || '',
+            phone: this.getXml2jsValue(ledger.LEDGERPHONE) || this.getXml2jsValue(ledger.LEDGERMOBILE) || '',
+            email: this.getXml2jsValue(ledger.EMAIL) || '',
+            gstin: this.getXml2jsValue(ledger.PARTYGSTIN) || ''
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for parties, falling back to regex:', error.message);
+      const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/LEDGER>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const content = match[2];
+        if (name) {
+          parties.push({
+            name, group: this.extractTagValue(content, "PARENT"),
+            address: this.extractTagValue(content, "ADDRESS"),
+            state: this.extractTagValue(content, "LEDSTATENAME"),
+            pincode: this.extractTagValue(content, "PINCODE"),
+            phone: this.extractTagValue(content, "LEDGERPHONE") || this.extractTagValue(content, "LEDGERMOBILE"),
+            email: this.extractTagValue(content, "EMAIL"),
+            gstin: this.extractTagValue(content, "PARTYGSTIN")
+          });
+        }
       }
     }
     return parties;
@@ -678,29 +838,64 @@ class TallyConnector {
 </ENVELOPE>`;
     try {
       const response = await this.sendRequest(xml);
-      return this.parseStockItemsResponse(response);
+      return await this.parseStockItemsResponse(response);
     } catch (error) {
       logger.error("Failed to get stock items:", error);
       throw error;
     }
   }
 
-  parseStockItemsResponse(xmlResponse) {
+  async parseStockItemsResponse(xmlResponse) {
     const items = [];
-    const pattern = /<STOCKITEM\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/STOCKITEM>/gi;
-    let match;
-    while ((match = pattern.exec(xmlResponse)) !== null) {
-      const name = this.decodeXmlEntities(match[1]).trim();
-      const content = match[2];
-      if (name) {
-        items.push({
-          name: name,
-          group: this.extractTagValue(content, "PARENT"),
-          unit: this.extractTagValue(content, "BASEUNITS"),
-          hsn_code: this.extractTagValue(content, "HSNCODE"),
-          description: this.extractTagValue(content, "DESCRIPTION"),
-          rate: parseFloat(this.extractTagValue(content, "OPENINGRATE")) || 0
-        });
+
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let stockList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          stockList = coll.STOCKITEM || [];
+        } else if (collection.STOCKITEM) {
+          stockList = collection.STOCKITEM || [];
+        }
+      }
+
+      if (!Array.isArray(stockList)) stockList = [stockList];
+
+      for (const item of stockList) {
+        const name = (item.$ && item.$.NAME) || this.getXml2jsValue(item.NAME) || '';
+        if (name.trim()) {
+          items.push({
+            name: name.trim(),
+            group: this.getXml2jsValue(item.PARENT) || '',
+            unit: this.getXml2jsValue(item.BASEUNITS) || '',
+            hsn_code: this.getXml2jsValue(item.HSNCODE) || '',
+            description: this.getXml2jsValue(item.DESCRIPTION) || '',
+            rate: parseFloat(this.getXml2jsValue(item.OPENINGRATE)) || 0
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for stock items, falling back to regex:', error.message);
+      const pattern = /<STOCKITEM\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/STOCKITEM>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const content = match[2];
+        if (name) {
+          items.push({
+            name, group: this.extractTagValue(content, "PARENT"),
+            unit: this.extractTagValue(content, "BASEUNITS"),
+            hsn_code: this.extractTagValue(content, "HSNCODE"),
+            description: this.extractTagValue(content, "DESCRIPTION"),
+            rate: parseFloat(this.extractTagValue(content, "OPENINGRATE")) || 0
+          });
+        }
       }
     }
     return items;
@@ -753,7 +948,7 @@ class TallyConnector {
     try {
       const response = await this.sendRequest(xml);
       logger.info('Tally getSalesVouchers response length:', response ? response.length : 0);
-      return this.parseSalesVouchersResponse(response);
+      return await this.parseSalesVouchersResponse(response);
     } catch (error) {
       logger.error('Failed to get sales vouchers:', error);
       throw error;
@@ -761,43 +956,76 @@ class TallyConnector {
   }
 
   /**
-   * Parse Sales Vouchers from Tally response
+   * Parse Sales Vouchers from Tally response using xml2js
    */
-  parseSalesVouchersResponse(xmlResponse) {
+  async parseSalesVouchersResponse(xmlResponse) {
     const vouchers = [];
 
-    // Pattern to match VOUCHER elements
-    const pattern = /<VOUCHER[^>]*>([\s\S]*?)<\/VOUCHER>/gi;
-    let match;
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
 
-    while ((match = pattern.exec(xmlResponse)) !== null) {
-      const content = match[1];
-
-      // Extract voucher details
-      const voucherNumber = this.extractTagValue(content, 'VOUCHERNUMBER');
-      const reference = this.extractTagValue(content, 'REFERENCE');
-      const partyLedger = this.extractTagValue(content, 'PARTYLEDGERNAME');
-      const dateStr = this.extractTagValue(content, 'DATE');
-      const amount = this.extractTagValue(content, 'AMOUNT');
-      const narration = this.extractTagValue(content, 'NARRATION');
-      const voucherType = this.extractTagValue(content, 'VOUCHERTYPENAME');
-
-      if (voucherNumber && voucherType === 'Sales') {
-        // Parse Tally date format (YYYYMMDD) to ISO format
-        let invoiceDate = '';
-        if (dateStr && dateStr.length === 8) {
-          invoiceDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+      let voucherList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          voucherList = coll.VOUCHER || [];
+        } else if (collection.VOUCHER) {
+          voucherList = collection.VOUCHER || [];
         }
+      }
 
-        vouchers.push({
-          voucher_number: voucherNumber,
-          reference: reference || voucherNumber,
-          party_name: partyLedger,
-          invoice_date: invoiceDate,
-          total_amount: Math.abs(parseFloat(amount)) || 0,
-          narration: narration,
-          voucher_type: voucherType
-        });
+      if (!Array.isArray(voucherList)) voucherList = [voucherList];
+
+      for (const voucher of voucherList) {
+        const voucherNumber = this.getXml2jsValue(voucher.VOUCHERNUMBER) || '';
+        const voucherType = this.getXml2jsValue(voucher.VOUCHERTYPENAME) || '';
+
+        if (voucherNumber && voucherType === 'Sales') {
+          const dateStr = this.getXml2jsValue(voucher.DATE) || '';
+          let invoiceDate = '';
+          if (dateStr && dateStr.length === 8) {
+            invoiceDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+          }
+
+          vouchers.push({
+            voucher_number: voucherNumber,
+            reference: this.getXml2jsValue(voucher.REFERENCE) || voucherNumber,
+            party_name: this.getXml2jsValue(voucher.PARTYLEDGERNAME) || '',
+            invoice_date: invoiceDate,
+            total_amount: Math.abs(parseFloat(this.getXml2jsValue(voucher.AMOUNT))) || 0,
+            narration: this.getXml2jsValue(voucher.NARRATION) || '',
+            voucher_type: voucherType
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for vouchers, falling back to regex:', error.message);
+      const pattern = /<VOUCHER[^>]*>([\s\S]*?)<\/VOUCHER>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const content = match[1];
+        const voucherNumber = this.extractTagValue(content, 'VOUCHERNUMBER');
+        const voucherType = this.extractTagValue(content, 'VOUCHERTYPENAME');
+        if (voucherNumber && voucherType === 'Sales') {
+          const dateStr = this.extractTagValue(content, 'DATE');
+          let invoiceDate = '';
+          if (dateStr && dateStr.length === 8) {
+            invoiceDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+          }
+          vouchers.push({
+            voucher_number: voucherNumber,
+            reference: this.extractTagValue(content, 'REFERENCE') || voucherNumber,
+            party_name: this.extractTagValue(content, 'PARTYLEDGERNAME'),
+            invoice_date: invoiceDate,
+            total_amount: Math.abs(parseFloat(this.extractTagValue(content, 'AMOUNT'))) || 0,
+            narration: this.extractTagValue(content, 'NARRATION'),
+            voucher_type: voucherType
+          });
+        }
       }
     }
 
