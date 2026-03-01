@@ -1,0 +1,71 @@
+{
+  "name": "setu",
+  "version": "1.0.0",
+  "description": "Setu - NexInvo Tally Connector",
+  "main": "src/main/main.js",
+  "author": "NexInvo",
+  "license": "MIT",
+  "scripts": {
+    "start": "node start.js",
+    "dev": "node start.js",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "pack": "electron-builder --dir",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.nexinvo.setu",
+    "productName": "Setu",
+    "copyright": "Copyright © 2024 NexInvo",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "NexInvo"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Setu"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "your-org",
+      "repo": "setu"
+    }
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "electron-store": "^8.1.0",
+    "ws": "^8.14.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^24.9.0",
+    "sharp": "^0.34.5"
+  }
+}

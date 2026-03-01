@@ -1,0 +1,34 @@
+appId: com.nexinvo.setu
+productName: Setu
+copyright: Copyright © 2024 NexInvo
+directories:
+  output: dist
+  buildResources: build
+files:
+  - src/**/*
+  - assets/**/*
+  - node_modules/**/*
+  - package.json
+  - start.js
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.png
+  publisherName: NexInvo
+  sign: false
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Setu
+publish:
+  provider: github
+  owner: your-org
+  repo: setu

@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Setu - NexInvo Tally Connector</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen">
+      <div class="login-page">
+        <div class="login-left">
+          <div class="login-branding">
+            <div class="login-logo">
+              <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="8" fill="#6366F1"/>
+                <path d="M8 16H24M16 8V24M12 12L20 20M20 12L12 20" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Setu</span>
+            </div>
+            <h1>Connect Tally to NexInvo</h1>
+            <p>Seamlessly sync your invoices, clients, and products between Tally and NexInvo</p>
+            <div class="login-features">
+              <div class="feature-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>Real-time invoice synchronization</span>
+              </div>
+              <div class="feature-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>Import clients & products from Tally</span>
+              </div>
+              <div class="feature-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>Automatic ledger mapping</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="login-right">
+          <div class="login-container">
+            <h2>Sign In</h2>
+            <p class="login-subtitle">Enter your NexInvo credentials to continue</p>
+
+            <form id="login-form">
+              <div class="form-group">
+                <label for="app-select">Connect to</label>
+                <select id="app-select" required>
+                  <option value="" disabled>Select Application</option>
+                  <option value="http://localhost:8000" selected>NexInvo (Local Development)</option>
+                  <option value="https://www.nexinvo.in">NexInvo (Production)</option>
+                  <option value="custom">Custom URL</option>
+                </select>
+              </div>
+              <div class="form-group hidden" id="custom-url-group">
+                <label for="custom-url">Custom Server URL</label>
+                <input type="text" id="custom-url" placeholder="https://your-server.com">
+              </div>
+              <input type="hidden" id="server-url" value="http://localhost:8000">
+              <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" placeholder="you@company.com" required>
+              </div>
+              <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" placeholder="Enter your password" required>
+              </div>
+              <div id="login-error" class="error-message hidden"></div>
+              <button type="submit" class="btn btn-primary btn-block" id="login-btn">
+                <span class="btn-text">Sign In</span>
+                <span class="btn-loader hidden"></span>
+              </button>
+            </form>
+
+            <div class="login-footer">
+              <p>By signing in, you agree to NexInvo's Terms of Service</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard Screen -->
+    <div id="dashboard-screen" class="screen hidden">
+      <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-logo">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="8" fill="#6366F1"/>
+                <path d="M8 16H24M16 8V24M12 12L20 20M20 12L12 20" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Setu</span>
+            </div>
+          </div>
+
+          <nav class="sidebar-nav">
+            <div class="nav-section">
+              <span class="nav-section-title">Overview</span>
+              <button class="nav-item active" data-tab="status">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"/>
+                  <rect x="14" y="3" width="7" height="7"/>
+                  <rect x="14" y="14" width="7" height="7"/>
+                  <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+                <span>Dashboard</span>
+              </button>
+            </div>
+
+            <div class="nav-section">
+              <span class="nav-section-title">Tally Sync</span>
+              <button class="nav-item" data-tab="ledger-mapping">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                </svg>
+                <span>Ledger Mapping</span>
+              </button>
+              <button class="nav-item" data-tab="import-tally">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Import from Tally</span>
+              </button>
+              <button class="nav-item" data-tab="manual-sync">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                <span>Manual Sync</span>
+              </button>
+              <button class="nav-item" data-tab="auto-sync">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                <span>Auto Sync</span>
+              </button>
+            </div>
+
+            <div class="nav-section">
+              <span class="nav-section-title">System</span>
+              <button class="nav-item" data-tab="settings">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <span>Settings</span>
+              </button>
+              <button class="nav-item" data-tab="logs">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/>
+                  <line x1="16" y1="17" x2="8" y2="17"/>
+                  <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>Activity Logs</span>
+              </button>
+            </div>
+          </nav>
+
+          <div class="sidebar-footer">
+            <div class="connection-status">
+              <div class="status-indicator" id="sidebar-server-status">
+                <span class="status-dot disconnected"></span>
+                <span>NexInvo</span>
+              </div>
+              <div class="status-indicator" id="sidebar-tally-status">
+                <span class="status-dot disconnected"></span>
+                <span>Tally</span>
+              </div>
+            </div>
+            <button class="logout-btn" id="sidebar-logout-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              <span>Logout</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-area">
+          <!-- Top Bar -->
+          <header class="topbar">
+            <div class="topbar-left">
+              <h1 id="page-title">Dashboard</h1>
+            </div>
+            <div class="topbar-right">
+              <div class="topbar-status">
+                <span id="server-badge" class="status-badge disconnected">
+                  <span class="badge-dot"></span>
+                  Server
+                </span>
+                <span id="tally-badge" class="status-badge disconnected">
+                  <span class="badge-dot"></span>
+                  Tally
+                </span>
+              </div>
+              <div class="topbar-user">
+                <span id="user-email">user@example.com</span>
+              </div>
+            </div>
+          </header>
+
+          <!-- Content Area -->
+          <div class="content-area">
+            <!-- Dashboard/Status Tab -->
+            <div id="status-tab" class="tab-content active">
+              <div class="dashboard-grid">
+                <!-- Connection Status Card -->
+                <div class="dash-card connection-card">
+                  <div class="card-header">
+                    <h3>Connection Status</h3>
+                    <button class="btn btn-sm btn-secondary" id="check-tally-btn">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                      </svg>
+                      Refresh
+                    </button>
+                  </div>
+                  <div class="connection-grid">
+                    <div class="connection-item" id="server-connection">
+                      <div class="conn-icon server">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                          <line x1="8" y1="21" x2="16" y2="21"/>
+                          <line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                      </div>
+                      <div class="conn-info">
+                        <span class="conn-name">NexInvo Server</span>
+                        <span class="conn-status" id="server-status-text">Disconnected</span>
+                      </div>
+                      <div class="conn-indicator disconnected"></div>
+                    </div>
+                    <div class="connection-item" id="tally-connection">
+                      <div class="conn-icon tally">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        </svg>
+                      </div>
+                      <div class="conn-info">
+                        <span class="conn-name">Tally ERP</span>
+                        <span class="conn-status" id="tally-status-text">Disconnected</span>
+                        <span class="conn-detail" id="tally-company"></span>
+                      </div>
+                      <div class="conn-indicator disconnected"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Quick Actions Card -->
+                <div class="dash-card actions-card">
+                  <div class="card-header">
+                    <h3>Quick Actions</h3>
+                  </div>
+                  <div class="quick-actions">
+                    <button class="action-btn" data-action="sync-invoices">
+                      <div class="action-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="23 4 23 10 17 10"/>
+                          <polyline points="1 20 1 14 7 14"/>
+                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                      </div>
+                      <span>Sync Invoices</span>
+                    </button>
+                    <button class="action-btn" data-action="import-clients">
+                      <div class="action-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="9" cy="7" r="4"/>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                      </div>
+                      <span>Import Clients</span>
+                    </button>
+                    <button class="action-btn" data-action="import-products">
+                      <div class="action-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                          <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                          <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                      </div>
+                      <span>Import Products</span>
+                    </button>
+                    <button class="action-btn" data-action="ledger-mapping">
+                      <div class="action-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                        </svg>
+                      </div>
+                      <span>Map Ledgers</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Sync Stats Card -->
+                <div class="dash-card stats-card">
+                  <div class="card-header">
+                    <h3>Sync Statistics</h3>
+                  </div>
+                  <div class="stats-grid">
+                    <div class="stat-item">
+                      <span class="stat-value" id="stat-synced">0</span>
+                      <span class="stat-label">Invoices Synced</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-value" id="stat-pending">0</span>
+                      <span class="stat-label">Pending</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-value" id="stat-failed">0</span>
+                      <span class="stat-label">Failed</span>
+                    </div>
+                  </div>
+                  <div class="last-sync">
+                    <span>Last sync:</span>
+                    <span id="last-sync-time">Never</span>
+                  </div>
+                </div>
+
+                <!-- Sync Queue Card -->
+                <div class="dash-card queue-card">
+                  <div class="card-header">
+                    <h3>Sync Queue</h3>
+                    <div class="card-actions">
+                      <button class="btn btn-sm btn-ghost" id="refresh-queue-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="23 4 23 10 17 10"/>
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                      </button>
+                      <button class="btn btn-sm btn-ghost" id="clear-queue-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="3 6 5 6 21 6"/>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="queue-status">
+                    <span class="queue-count" id="queue-count">0</span>
+                    <span class="queue-label">items in queue</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Ledger Mapping Tab -->
+            <div id="ledger-mapping-tab" class="tab-content hidden">
+              <div class="page-container">
+                <div class="page-header">
+                  <div class="page-header-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                  </div>
+                  <div class="page-header-text">
+                    <h2>Ledger Mapping</h2>
+                    <p>Map your Tally ledgers to NexInvo for accurate invoice synchronization</p>
+                  </div>
+                </div>
+
+                <div class="mapping-container">
+                  <div class="mapping-step">
+                    <div class="step-header">
+                      <span class="step-badge">Step 1</span>
+                      <h4>Fetch Ledgers from Tally</h4>
+                    </div>
+                    <p class="step-description">Connect to Tally and retrieve all available ledgers</p>
+                    <button class="btn btn-fetch" id="fetch-ledgers-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Ledgers from Tally
+                    </button>
+                    <div id="ledger-loading" class="loading-state hidden">
+                      <div class="loader"></div>
+                      <p>Fetching ledgers from Tally...</p>
+                    </div>
+                  </div>
+
+                  <div class="mapping-step">
+                    <div class="step-header">
+                      <span class="step-badge">Step 2</span>
+                      <h4>Configure Ledger Mappings</h4>
+                    </div>
+                    <p class="step-description">Select the corresponding Tally ledger for each category</p>
+
+                    <form id="ledger-mapping-form" class="mapping-form">
+                      <div class="mapping-grid">
+                        <div class="mapping-item">
+                          <label for="sales-ledger">
+                            <span class="mapping-label">Sales Ledger</span>
+                            <span class="mapping-hint">For recording sales revenue</span>
+                          </label>
+                          <select id="sales-ledger" required>
+                            <option value="">Select Ledger</option>
+                          </select>
+                        </div>
+
+                        <div class="mapping-item">
+                          <label for="cgst-ledger">
+                            <span class="mapping-label">CGST Output</span>
+                            <span class="mapping-hint">Central GST on sales</span>
+                          </label>
+                          <select id="cgst-ledger" required>
+                            <option value="">Select Ledger</option>
+                          </select>
+                        </div>
+
+                        <div class="mapping-item">
+                          <label for="sgst-ledger">
+                            <span class="mapping-label">SGST Output</span>
+                            <span class="mapping-hint">State GST on sales</span>
+                          </label>
+                          <select id="sgst-ledger" required>
+                            <option value="">Select Ledger</option>
+                          </select>
+                        </div>
+
+                        <div class="mapping-item">
+                          <label for="igst-ledger">
+                            <span class="mapping-label">IGST Output</span>
+                            <span class="mapping-hint">Integrated GST on interstate sales</span>
+                          </label>
+                          <select id="igst-ledger" required>
+                            <option value="">Select Ledger</option>
+                          </select>
+                        </div>
+
+                        <div class="mapping-item">
+                          <label for="roundoff-ledger">
+                            <span class="mapping-label">Round Off</span>
+                            <span class="mapping-hint">For rounding adjustments</span>
+                          </label>
+                          <select id="roundoff-ledger">
+                            <option value="">Select Ledger (Optional)</option>
+                          </select>
+                        </div>
+
+                        <div class="mapping-item">
+                          <label for="discount-ledger">
+                            <span class="mapping-label">Discount</span>
+                            <span class="mapping-hint">For discount given to customers</span>
+                          </label>
+                          <select id="discount-ledger">
+                            <option value="">Select Ledger (Optional)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="mapping-actions">
+                        <button type="submit" class="btn btn-primary">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                          </svg>
+                          Save Mappings
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <!-- Invoice Number Series Mapping -->
+                  <div class="mapping-step">
+                    <div class="step-header">
+                      <span class="step-badge">Step 3</span>
+                      <h4>Invoice Number Series</h4>
+                    </div>
+                    <p class="step-description">Configure how invoice numbers are handled when importing from Tally</p>
+
+                    <form id="invoice-series-form" class="mapping-form">
+                      <div class="series-options">
+                        <label class="radio-card">
+                          <input type="radio" name="invoice-number-mode" value="keep" checked>
+                          <div class="radio-card-content">
+                            <div class="radio-card-header">
+                              <span class="radio-indicator"></span>
+                              <strong>Keep Tally Numbers</strong>
+                            </div>
+                            <p class="radio-card-desc">Use the original invoice number from Tally as-is</p>
+                          </div>
+                        </label>
+
+                        <label class="radio-card">
+                          <input type="radio" name="invoice-number-mode" value="nexinvo">
+                          <div class="radio-card-content">
+                            <div class="radio-card-header">
+                              <span class="radio-indicator"></span>
+                              <strong>Use NexInvo Series</strong>
+                            </div>
+                            <p class="radio-card-desc">Generate new NexInvo invoice numbers (continues your existing series)</p>
+                          </div>
+                        </label>
+
+                        <label class="radio-card">
+                          <input type="radio" name="invoice-number-mode" value="custom">
+                          <div class="radio-card-content">
+                            <div class="radio-card-header">
+                              <span class="radio-indicator"></span>
+                              <strong>Custom Prefix</strong>
+                            </div>
+                            <p class="radio-card-desc">Add a custom prefix to differentiate Tally imports</p>
+                            <div class="custom-prefix-input" id="custom-prefix-section">
+                              <input type="text" id="tally-invoice-prefix" placeholder="e.g., TALLY-" maxlength="20">
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div class="series-info">
+                        <div class="info-card">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                          </svg>
+                          <div>
+                            <strong>Detected Tally Prefix:</strong>
+                            <span id="detected-tally-prefix">Not detected yet</span>
+                          </div>
+                        </div>
+                        <div class="form-checkbox">
+                          <input type="checkbox" id="auto-detect-series" checked>
+                          <label for="auto-detect-series">
+                            <span>Auto-detect Tally invoice number pattern</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div class="mapping-actions">
+                        <button type="submit" class="btn btn-secondary">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                          </svg>
+                          Save Series Settings
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Manual Sync Tab -->
+            <div id="manual-sync-tab" class="tab-content hidden">
+              <div class="page-container">
+                <div class="page-header">
+                  <div class="page-header-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="23 4 23 10 17 10"/>
+                      <polyline points="1 20 1 14 7 14"/>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                  </div>
+                  <div class="page-header-text">
+                    <h2>Manual Sync</h2>
+                    <p>Two-way sync between NexInvo and Tally with preview and approval</p>
+                  </div>
+                </div>
+
+                <div class="sync-container">
+                  <!-- Step 1: Select Date Range -->
+                  <div class="form-card">
+                    <div class="step-header">
+                      <span class="step-badge">Step 1</span>
+                      <h4>Select Date Range</h4>
+                    </div>
+                    <p class="form-hint">Choose the period for which you want to compare and sync invoices</p>
+
+                    <div class="date-range-inputs">
+                      <div class="form-group">
+                        <label for="manual-sync-start-date">From Date</label>
+                        <input type="date" id="manual-sync-start-date" required>
+                      </div>
+                      <div class="form-group">
+                        <label for="manual-sync-end-date">To Date</label>
+                        <input type="date" id="manual-sync-end-date" required>
+                      </div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary btn-lg" id="fetch-sync-preview-btn">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      Fetch & Compare Invoices
+                    </button>
+                  </div>
+
+                  <!-- Fetching Progress -->
+                  <div id="manual-sync-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Fetching invoices from Tally and NexInvo...</p>
+                  </div>
+
+                  <!-- Step 2: Preview Results -->
+                  <div id="sync-preview-results" class="sync-preview-results hidden">
+                    <div class="step-header">
+                      <span class="step-badge">Step 2</span>
+                      <h4>Review & Select Invoices</h4>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="sync-summary-cards">
+                      <div class="summary-card matched">
+                        <div class="summary-icon">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                          </svg>
+                        </div>
+                        <div class="summary-content">
+                          <span class="summary-number" id="matched-count">0</span>
+                          <span class="summary-label">Already Matched</span>
+                        </div>
+                      </div>
+                      <div class="summary-card to-nexinvo">
+                        <div class="summary-icon">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                          </svg>
+                        </div>
+                        <div class="summary-content">
+                          <span class="summary-number" id="to-nexinvo-count">0</span>
+                          <span class="summary-label">Import to NexInvo</span>
+                        </div>
+                      </div>
+                      <div class="summary-card to-tally">
+                        <div class="summary-icon">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                          </svg>
+                        </div>
+                        <div class="summary-content">
+                          <span class="summary-number" id="to-tally-count">0</span>
+                          <span class="summary-label">Export to Tally</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Tabs for different sections -->
+                    <div class="sync-preview-tabs">
+                      <button class="sync-tab active" data-sync-tab="to-nexinvo">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                          <polyline points="7 10 12 15 17 10"/>
+                          <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        From Tally <span class="tab-badge" id="tab-to-nexinvo-count">0</span>
+                      </button>
+                      <button class="sync-tab" data-sync-tab="to-tally">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                          <polyline points="17 8 12 3 7 8"/>
+                          <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        To Tally <span class="tab-badge" id="tab-to-tally-count">0</span>
+                      </button>
+                      <button class="sync-tab" data-sync-tab="matched">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                          <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        Matched <span class="tab-badge" id="tab-matched-count">0</span>
+                      </button>
+                    </div>
+
+                    <!-- To NexInvo Section -->
+                    <div class="sync-preview-section active" id="section-to-nexinvo">
+                      <div class="section-header">
+                        <div class="section-info">
+                          <h5>Tally Invoices to Import to NexInvo</h5>
+                          <p>These invoices exist in Tally but not in NexInvo</p>
+                        </div>
+                        <label class="select-all-checkbox">
+                          <input type="checkbox" id="select-all-to-nexinvo">
+                          <span class="checkmark"></span>
+                          <span>Select All</span>
+                        </label>
+                      </div>
+                      <div class="sync-items-list" id="to-nexinvo-list">
+                        <p class="empty-state">No invoices to import</p>
+                      </div>
+                    </div>
+
+                    <!-- To Tally Section -->
+                    <div class="sync-preview-section hidden" id="section-to-tally">
+                      <div class="section-header">
+                        <div class="section-info">
+                          <h5>NexInvo Invoices to Export to Tally</h5>
+                          <p>These invoices exist in NexInvo but not in Tally</p>
+                        </div>
+                        <label class="select-all-checkbox">
+                          <input type="checkbox" id="select-all-to-tally">
+                          <span class="checkmark"></span>
+                          <span>Select All</span>
+                        </label>
+                      </div>
+                      <div class="sync-items-list" id="to-tally-list">
+                        <p class="empty-state">No invoices to export</p>
+                      </div>
+                    </div>
+
+                    <!-- Matched Section -->
+                    <div class="sync-preview-section hidden" id="section-matched">
+                      <div class="section-header">
+                        <div class="section-info">
+                          <h5>Already Matched Invoices</h5>
+                          <p>These invoices exist in both systems (matched by date + amount + client)</p>
+                        </div>
+                      </div>
+                      <div class="sync-items-list" id="matched-list">
+                        <p class="empty-state">No matched invoices</p>
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="sync-actions">
+                      <button type="button" class="btn btn-secondary" id="cancel-sync-btn">
+                        Cancel
+                      </button>
+                      <button type="button" class="btn btn-primary btn-lg" id="execute-sync-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="23 4 23 10 17 10"/>
+                          <polyline points="1 20 1 14 7 14"/>
+                          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Sync Selected (<span id="selected-sync-count">0</span>)
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Sync Progress -->
+                  <div id="manual-sync-progress" class="sync-progress hidden">
+                    <div class="progress-header">
+                      <span>Syncing invoices...</span>
+                      <span id="manual-sync-progress-text">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div class="progress-fill" id="manual-sync-progress-bar"></div>
+                    </div>
+                    <p id="manual-sync-status-message" class="progress-message"></p>
+                  </div>
+
+                  <!-- Sync Result -->
+                  <div id="manual-sync-result" class="sync-result hidden">
+                    <div class="result-icon success">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                      </svg>
+                    </div>
+                    <h4>Sync Completed</h4>
+                    <div class="result-stats">
+                      <div class="result-stat">
+                        <span class="stat-value" id="result-to-nexinvo">0</span>
+                        <span class="stat-label">Imported to NexInvo</span>
+                      </div>
+                      <div class="result-stat">
+                        <span class="stat-value" id="result-to-tally">0</span>
+                        <span class="stat-label">Exported to Tally</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="new-sync-btn">
+                      Start New Sync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Import from Tally Tab -->
+            <div id="import-tally-tab" class="tab-content hidden">
+              <div class="import-page">
+                <!-- Page Header -->
+                <div class="import-header">
+                  <div class="import-header-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                  </div>
+                  <div class="import-header-text">
+                    <h2>Import from Tally</h2>
+                    <p>Bring your Tally data into NexInvo with just a few clicks</p>
+                  </div>
+                </div>
+
+                <!-- Step Indicator -->
+                <div class="import-steps">
+                  <div class="step active" data-step="1">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Choose Type</div>
+                  </div>
+                  <div class="step-connector"></div>
+                  <div class="step" data-step="2">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Fetch Data</div>
+                  </div>
+                  <div class="step-connector"></div>
+                  <div class="step" data-step="3">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Select & Import</div>
+                  </div>
+                </div>
+
+                <!-- Import Type Cards -->
+                <div class="import-type-section">
+                  <h4 class="section-title">What would you like to import?</h4>
+                  <div class="import-type-cards">
+                    <div class="import-type-card active" data-import-tab="clients">
+                      <div class="type-card-icon clients-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="9" cy="7" r="4"/>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                      </div>
+                      <div class="type-card-content">
+                        <h5>Clients / Parties</h5>
+                        <p>Import your customers, vendors, and other parties from Tally</p>
+                      </div>
+                      <div class="type-card-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div class="import-type-card" data-import-tab="products">
+                      <div class="type-card-icon products-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                          <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                          <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                      </div>
+                      <div class="type-card-content">
+                        <h5>Products / Services</h5>
+                        <p>Import stock items and services from your Tally inventory</p>
+                      </div>
+                      <div class="type-card-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Clients Import Section -->
+                <div id="import-clients-content" class="import-content">
+                  <div class="fetch-section">
+                    <div class="fetch-info">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      <span>Click the button below to fetch all parties from your connected Tally</span>
+                    </div>
+                    <button class="btn btn-fetch" id="fetch-parties-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Parties from Tally
+                    </button>
+                  </div>
+
+                  <div id="parties-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Connecting to Tally and fetching parties...</p>
+                  </div>
+
+                  <div id="parties-list" class="items-list-container hidden">
+                    <div class="list-toolbar">
+                      <label class="select-all-checkbox">
+                        <input type="checkbox" id="select-all-parties">
+                        <span class="checkmark"></span>
+                        <span class="select-label">Select All</span>
+                      </label>
+                      <div class="list-stats">
+                        <span class="stat-badge" id="parties-count">0 parties found</span>
+                        <span class="stat-badge selected-count" id="parties-selected-count">0 selected</span>
+                      </div>
+                    </div>
+
+                    <div id="parties-items" class="items-grid"></div>
+
+                    <div class="import-actions">
+                      <button class="btn btn-import" id="import-clients-btn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M5 12h14"/>
+                          <path d="M12 5l7 7-7 7"/>
+                        </svg>
+                        Import Selected to NexInvo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Products Import Section -->
+                <div id="import-products-content" class="import-content hidden">
+                  <div class="fetch-section">
+                    <div class="fetch-info">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      <span>Click the button below to fetch all stock items from your connected Tally</span>
+                    </div>
+                    <button class="btn btn-fetch" id="fetch-stock-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Stock Items from Tally
+                    </button>
+                  </div>
+
+                  <div id="stock-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Connecting to Tally and fetching stock items...</p>
+                  </div>
+
+                  <div id="stock-list" class="items-list-container hidden">
+                    <div class="list-toolbar">
+                      <label class="select-all-checkbox">
+                        <input type="checkbox" id="select-all-stock">
+                        <span class="checkmark"></span>
+                        <span class="select-label">Select All</span>
+                      </label>
+                      <div class="list-stats">
+                        <span class="stat-badge" id="stock-count">0 items found</span>
+                        <span class="stat-badge selected-count" id="stock-selected-count">0 selected</span>
+                      </div>
+                    </div>
+
+                    <div id="stock-items" class="items-grid"></div>
+
+                    <div class="import-actions">
+                      <button class="btn btn-import" id="import-products-btn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M5 12h14"/>
+                          <path d="M12 5l7 7-7 7"/>
+                        </svg>
+                        Import Selected to NexInvo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Auto Sync Tab -->
+            <div id="auto-sync-tab" class="tab-content hidden">
+              <div class="page-container">
+                <div class="page-header">
+                  <div class="page-header-icon pulse-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="23 4 23 10 17 10"/>
+                      <polyline points="1 20 1 14 7 14"/>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                  </div>
+                  <div class="page-header-text">
+                    <h2>Auto Sync</h2>
+                    <p>Automatically sync invoices between Tally and NexInvo at regular intervals</p>
+                  </div>
+                </div>
+
+                <!-- Auto-Sync Status Card -->
+                <div class="auto-sync-status-card">
+                  <div class="auto-sync-indicator">
+                    <div class="sync-pulse" id="sync-pulse"></div>
+                    <span class="auto-sync-label" id="auto-sync-status-text">Auto-Sync Disabled</span>
+                  </div>
+                  <div class="auto-sync-timer" id="auto-sync-timer">
+                    <span class="timer-label">Next sync in:</span>
+                    <span class="timer-value" id="next-sync-countdown">--:--</span>
+                  </div>
+                </div>
+
+                <!-- Interval Selection -->
+                <div class="interval-section" id="interval-section">
+                  <h4>Sync Interval</h4>
+                  <div class="interval-chips">
+                    <label class="interval-chip">
+                      <input type="radio" name="sync-interval" value="5">
+                      <span>5 min</span>
+                    </label>
+                    <label class="interval-chip">
+                      <input type="radio" name="sync-interval" value="15" checked>
+                      <span>15 min</span>
+                    </label>
+                    <label class="interval-chip">
+                      <input type="radio" name="sync-interval" value="30">
+                      <span>30 min</span>
+                    </label>
+                    <label class="interval-chip">
+                      <input type="radio" name="sync-interval" value="60">
+                      <span>1 hour</span>
+                    </label>
+                    <label class="interval-chip custom-chip">
+                      <input type="radio" name="sync-interval" value="custom">
+                      <span>Custom</span>
+                    </label>
+                  </div>
+                  <div class="custom-interval hidden" id="custom-interval-input">
+                    <input type="number" id="custom-minutes" min="1" max="1440" value="45" placeholder="Minutes">
+                    <span>minutes</span>
+                  </div>
+                </div>
+
+                <!-- Sync Controls -->
+                <div class="sync-controls">
+                  <button class="btn btn-primary btn-lg" id="start-auto-sync-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    Start Auto-Sync
+                  </button>
+                </div>
+
+                <!-- Today's Stats -->
+                <div class="realtime-stats">
+                  <div class="sync-stat-card">
+                    <span class="sync-stat-number" id="syncs-today">0</span>
+                    <span class="sync-stat-label">Syncs Today</span>
+                  </div>
+                  <div class="sync-stat-card">
+                    <span class="sync-stat-number" id="invoices-synced-today">0</span>
+                    <span class="sync-stat-label">Invoices Synced</span>
+                  </div>
+                </div>
+
+                <!-- Activity Log -->
+                <div class="activity-log">
+                  <h4>Activity Log</h4>
+                  <div class="log-list" id="sync-activity-log">
+                    <p class="empty-state">No sync activity yet</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings-tab" class="tab-content hidden">
+              <div class="page-container">
+                <div class="page-header">
+                  <div class="page-header-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                  </div>
+                  <div class="page-header-text">
+                    <h2>Settings</h2>
+                    <p>Configure Setu application preferences and connections</p>
+                  </div>
+                </div>
+
+                <div class="settings-sections">
+                  <!-- Tally Connection Settings -->
+                  <div class="settings-card">
+                    <div class="settings-card-header">
+                      <h4>Tally Connection</h4>
+                      <span class="settings-badge">Required</span>
+                    </div>
+                    <div class="settings-card-body">
+                      <div class="settings-row">
+                        <div class="form-group">
+                          <label for="tally-host">Tally Host</label>
+                          <input type="text" id="tally-host" value="localhost" placeholder="localhost">
+                          <span class="form-hint">IP address or hostname where Tally is running</span>
+                        </div>
+                        <div class="form-group">
+                          <label for="tally-port">Tally Port</label>
+                          <input type="number" id="tally-port" value="9000" placeholder="9000">
+                          <span class="form-hint">Default port is 9000</span>
+                        </div>
+                      </div>
+                      <button class="btn btn-secondary" id="test-tally-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="23 4 23 10 17 10"/>
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Test Connection
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Application Settings -->
+                  <div class="settings-card">
+                    <div class="settings-card-header">
+                      <h4>Application</h4>
+                    </div>
+                    <div class="settings-card-body">
+                      <div class="settings-toggle">
+                        <div class="toggle-info">
+                          <span class="toggle-label">Start on system boot</span>
+                          <span class="toggle-desc">Automatically start Setu when Windows starts</span>
+                        </div>
+                        <label class="toggle-switch">
+                          <input type="checkbox" id="auto-start">
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </div>
+                      <div class="settings-toggle">
+                        <div class="toggle-info">
+                          <span class="toggle-label">Minimize to system tray</span>
+                          <span class="toggle-desc">Keep Setu running in the background when closed</span>
+                        </div>
+                        <label class="toggle-switch">
+                          <input type="checkbox" id="minimize-to-tray" checked>
+                          <span class="toggle-slider"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Updates -->
+                  <div class="settings-card">
+                    <div class="settings-card-header">
+                      <h4>Updates</h4>
+                    </div>
+                    <div class="settings-card-body">
+                      <div class="update-info">
+                        <span class="version-label">Current Version</span>
+                        <span class="version-number" id="app-version">1.0.0</span>
+                      </div>
+                      <button class="btn btn-secondary" id="check-updates-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                          <polyline points="7 10 12 15 17 10"/>
+                          <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Check for Updates
+                      </button>
+                      <span class="update-status" id="update-status"></span>
+                    </div>
+                  </div>
+
+                  <!-- Account -->
+                  <div class="settings-card danger-card">
+                    <div class="settings-card-header">
+                      <h4>Account</h4>
+                    </div>
+                    <div class="settings-card-body">
+                      <p class="settings-text">Logged in as <strong id="settings-user-email">user@example.com</strong></p>
+                      <button class="btn btn-danger" id="logout-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                          <polyline points="16 17 21 12 16 7"/>
+                          <line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs-tab" class="tab-content hidden">
+              <div class="page-container">
+                <div class="page-header">
+                  <div class="page-header-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                      <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                  </div>
+                  <div class="page-header-text">
+                    <h2>Activity Logs</h2>
+                    <p>View recent application activity and debug information</p>
+                  </div>
+                  <button class="btn btn-secondary" id="refresh-logs-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="23 4 23 10 17 10"/>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+
+                <div class="logs-container">
+                  <div class="logs-toolbar">
+                    <div class="log-filters">
+                      <button class="log-filter active" data-level="all">All</button>
+                      <button class="log-filter" data-level="info">Info</button>
+                      <button class="log-filter" data-level="warn">Warnings</button>
+                      <button class="log-filter" data-level="error">Errors</button>
+                    </div>
+                  </div>
+                  <div id="logs-content" class="logs-content">
+                    <p class="empty-state">Loading logs...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

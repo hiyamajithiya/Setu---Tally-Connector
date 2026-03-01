@@ -1,0 +1,29 @@
+ICON FILES NEEDED
+=================
+
+Please add the following icon files to this directory:
+
+1. icon.ico - Main application icon (256x256)
+2. icon.png - PNG version of main icon (256x256)
+3. tray-connected.png - System tray icon when connected (16x16 or 32x32)
+4. tray-disconnected.png - System tray icon when disconnected (16x16 or 32x32)
+5. tray-syncing.png - System tray icon when syncing (16x16 or 32x32)
+6. tray-error.png - System tray icon when error (16x16 or 32x32)
+
+Recommended:
+- Use green color for connected state
+- Use red color for disconnected/error state
+- Use yellow/orange for syncing state
+- Keep icons simple and recognizable at small sizes
+
+You can use tools like:
+- Figma (free)
+- GIMP (free)
+- Adobe Illustrator
+- Online icon generators
+
+For .ico files, include multiple sizes:
+- 16x16
+- 32x32
+- 48x48
+- 256x256

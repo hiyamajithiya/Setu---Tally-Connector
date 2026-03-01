@@ -1,0 +1,674 @@
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
+const path = require('path');
+const Store = require('electron-store');
+
+// Delay loading these until app is ready to avoid electron-updater initialization issues
+let autoUpdater = null;
+let logger = null;
+let WebSocketClient = null;
+let TallyConnector = null;
+let QueueManager = null;
+
+function loadModules() {
+  autoUpdater = require('electron-updater').autoUpdater;
+  logger = require('./logger');
+  WebSocketClient = require('../services/websocket-client');
+  TallyConnector = require('../services/tally-connector');
+  QueueManager = require('../services/queue-manager');
+}
+
+// Simple console logger until full logger is loaded
+const consoleLog = {
+  info: (...args) => console.log('[INFO]', ...args),
+  warn: (...args) => console.warn('[WARN]', ...args),
+  error: (...args) => console.error('[ERROR]', ...args),
+  getRecentLogs: () => []
+};
+
+// Initialize store for persistent data
+const store = new Store({
+  name: 'setu-config',
+  defaults: {
+    serverUrl: '',
+    authToken: '',
+    tallyHost: 'localhost',
+    tallyPort: 9000,
+    autoStart: true,
+    minimizeToTray: true,
+    lastSync: null
+  }
+});
+
+let mainWindow = null;
+let tray = null;
+let wsClient = null;
+let tallyConnector = null;
+let queueManager = null;
+let isQuitting = false;
+
+// Tray icon states
+const TRAY_ICONS = {
+  connected: 'tray-connected.png',
+  disconnected: 'tray-disconnected.png',
+  syncing: 'tray-syncing.png',
+  error: 'tray-error.png'
+};
+
+// Current connection status
+let connectionStatus = {
+  server: false,
+  tally: false,
+  syncing: false
+};
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 480,
+    height: 680,
+    minWidth: 400,
+    minHeight: 500,
+    resizable: true,
+    frame: true,
+    icon: path.join(__dirname, '../../assets/icon.png'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+
+  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Hide menu bar
+  mainWindow.setMenuBarVisibility(false);
+
+  // Handle window close - minimize to tray instead
+  mainWindow.on('close', (event) => {
+    if (!isQuitting && store.get('minimizeToTray')) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+    return true;
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  // Open external links in browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+function createTray() {
+  const iconPath = path.join(__dirname, '../../assets', TRAY_ICONS.disconnected);
+
+  // Create a simple icon if file doesn't exist
+  let trayIcon;
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath);
+    if (trayIcon.isEmpty()) {
+      trayIcon = createDefaultIcon();
+    }
+  } catch (e) {
+    trayIcon = createDefaultIcon();
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('Setu - NexInvo Tally Connector');
+
+  updateTrayMenu();
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+      }
+    }
+  });
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+function createDefaultIcon() {
+  // Create a simple 16x16 icon
+  const size = 16;
+  const canvas = Buffer.alloc(size * size * 4);
+
+  // Fill with a blue color (RGBA)
+  for (let i = 0; i < size * size; i++) {
+    canvas[i * 4] = 66;      // R
+    canvas[i * 4 + 1] = 133; // G
+    canvas[i * 4 + 2] = 244; // B
+    canvas[i * 4 + 3] = 255; // A
+  }
+
+  return nativeImage.createFromBuffer(canvas, { width: size, height: size });
+}
+
+function updateTrayMenu() {
+  const serverStatus = connectionStatus.server ? 'Connected' : 'Disconnected';
+  const tallyStatus = connectionStatus.tally ? 'Connected' : 'Disconnected';
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Setu - NexInvo Connector',
+      enabled: false,
+      icon: createDefaultIcon()
+    },
+    { type: 'separator' },
+    {
+      label: `Server: ${serverStatus}`,
+      enabled: false
+    },
+    {
+      label: `Tally: ${tallyStatus}`,
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: 'Open Setu',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Check for Updates',
+      click: () => {
+        if (autoUpdater) autoUpdater.checkForUpdatesAndNotify();
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Setu',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+}
+
+function updateTrayIcon() {
+  if (!tray) return;
+
+  let iconName = TRAY_ICONS.disconnected;
+  let tooltip = 'Setu - Disconnected';
+
+  if (connectionStatus.syncing) {
+    iconName = TRAY_ICONS.syncing;
+    tooltip = 'Setu - Syncing...';
+  } else if (connectionStatus.server && connectionStatus.tally) {
+    iconName = TRAY_ICONS.connected;
+    tooltip = 'Setu - Connected';
+  } else if (!connectionStatus.server || !connectionStatus.tally) {
+    iconName = TRAY_ICONS.error;
+    tooltip = `Setu - ${!connectionStatus.server ? 'Server' : 'Tally'} Disconnected`;
+  }
+
+  const iconPath = path.join(__dirname, '../../assets', iconName);
+  try {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      tray.setImage(icon);
+    }
+  } catch (e) {
+    // Use default icon on error
+  }
+
+  tray.setToolTip(tooltip);
+  updateTrayMenu();
+}
+
+// Initialize services
+async function initializeServices() {
+  // Initialize Tally Connector
+  tallyConnector = new TallyConnector({
+    host: store.get('tallyHost'),
+    port: store.get('tallyPort')
+  });
+
+  // Initialize Queue Manager
+  queueManager = new QueueManager(store, tallyConnector);
+
+  // Initialize WebSocket Client
+  const serverUrl = store.get('serverUrl');
+  const authToken = store.get('authToken');
+
+  if (serverUrl && authToken) {
+    initWebSocket(serverUrl, authToken);
+  }
+
+  // Start Tally connection checker
+  startTallyChecker();
+
+  // Process any pending queue items
+  queueManager.startProcessing();
+}
+
+function initWebSocket(serverUrl, authToken) {
+  if (wsClient) {
+    wsClient.disconnect();
+  }
+
+  wsClient = new WebSocketClient({
+    serverUrl,
+    authToken,
+    onConnect: () => {
+      connectionStatus.server = true;
+      updateTrayIcon();
+      sendToRenderer('server-status', { connected: true });
+      logger.info('Connected to NexInvo server');
+    },
+    onDisconnect: () => {
+      connectionStatus.server = false;
+      updateTrayIcon();
+      sendToRenderer('server-status', { connected: false });
+      logger.info('Disconnected from NexInvo server');
+    },
+    onMessage: handleServerMessage,
+    onError: (error) => {
+      logger.error('WebSocket error:', error);
+      sendToRenderer('error', { message: error.message });
+    }
+  });
+
+  wsClient.connect();
+}
+
+async function handleServerMessage(message) {
+  logger.info('Received message from server:', message.type);
+
+  switch (message.type) {
+    case 'SYNC_REQUEST':
+      await handleSyncRequest(message.data);
+      break;
+    case 'CHECK_CONNECTION':
+      await handleCheckConnection();
+      break;
+    case 'GET_LEDGERS':
+      await handleGetLedgers();
+      break;
+    case 'PING':
+      wsClient.send({ type: 'PONG', timestamp: Date.now() });
+      break;
+    default:
+      logger.warn('Unknown message type:', message.type);
+  }
+}
+
+async function handleSyncRequest(data) {
+  connectionStatus.syncing = true;
+  updateTrayIcon();
+  sendToRenderer('sync-started', data);
+
+  try {
+    // Check if Tally is connected
+    const tallyConnected = await tallyConnector.checkConnection();
+
+    if (!tallyConnected) {
+      // Add to offline queue
+      queueManager.addToQueue({
+        type: 'SYNC_INVOICES',
+        data,
+        timestamp: Date.now()
+      });
+
+      wsClient.send({
+        type: 'SYNC_QUEUED',
+        data: {
+          requestId: data.requestId,
+          message: 'Tally is offline. Request queued for later processing.'
+        }
+      });
+
+      sendToRenderer('sync-queued', { message: 'Added to offline queue' });
+      return;
+    }
+
+    // Process each invoice
+    const results = {
+      success: [],
+      failed: [],
+      requestId: data.requestId
+    };
+
+    for (const invoice of data.invoices) {
+      try {
+        const result = await tallyConnector.syncInvoice(invoice, data.mapping);
+        results.success.push({
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoice_number
+        });
+        sendToRenderer('invoice-synced', { invoice: invoice.invoice_number });
+      } catch (error) {
+        results.failed.push({
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoice_number,
+          error: error.message
+        });
+        logger.error(`Failed to sync invoice ${invoice.invoice_number}:`, error);
+      }
+    }
+
+    // Send results back to server
+    wsClient.send({
+      type: 'SYNC_RESULT',
+      data: results
+    });
+
+    sendToRenderer('sync-completed', results);
+    store.set('lastSync', new Date().toISOString());
+
+  } catch (error) {
+    logger.error('Sync error:', error);
+    wsClient.send({
+      type: 'SYNC_ERROR',
+      data: {
+        requestId: data.requestId,
+        error: error.message
+      }
+    });
+    sendToRenderer('sync-error', { message: error.message });
+  } finally {
+    connectionStatus.syncing = false;
+    updateTrayIcon();
+  }
+}
+
+async function handleCheckConnection() {
+  try {
+    const result = await tallyConnector.checkConnection();
+    wsClient.send({
+      type: 'CONNECTION_STATUS',
+      data: {
+        connected: result.connected,
+        companyName: result.companyName,
+        tallyVersion: result.tallyVersion
+      }
+    });
+  } catch (error) {
+    wsClient.send({
+      type: 'CONNECTION_STATUS',
+      data: {
+        connected: false,
+        error: error.message
+      }
+    });
+  }
+}
+
+async function handleGetLedgers() {
+  try {
+    const ledgers = await tallyConnector.getLedgers();
+    wsClient.send({
+      type: 'LEDGERS_RESPONSE',
+      data: { ledgers }
+    });
+  } catch (error) {
+    wsClient.send({
+      type: 'LEDGERS_ERROR',
+      data: { error: error.message }
+    });
+  }
+}
+
+function startTallyChecker() {
+  // Check Tally connection every 30 seconds
+  const checkTally = async () => {
+    try {
+      const result = await tallyConnector.checkConnection();
+      const wasConnected = connectionStatus.tally;
+      connectionStatus.tally = result.connected;
+
+      if (wasConnected !== result.connected) {
+        updateTrayIcon();
+        sendToRenderer('tally-status', {
+          connected: result.connected,
+          companyName: result.companyName,
+          tallyVersion: result.tallyVersion
+        });
+
+        // Notify server of status change
+        if (wsClient && wsClient.isConnected()) {
+          wsClient.send({
+            type: 'TALLY_STATUS',
+            data: { connected: result.connected }
+          });
+        }
+
+        // If Tally just connected, process queue
+        if (result.connected && !wasConnected) {
+          queueManager.processQueue();
+        }
+      }
+    } catch (error) {
+      connectionStatus.tally = false;
+      updateTrayIcon();
+    }
+  };
+
+  checkTally();
+  setInterval(checkTally, 30000);
+}
+
+function sendToRenderer(channel, data) {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send(channel, data);
+  }
+}
+
+// IPC Handlers
+ipcMain.handle('get-config', () => {
+  return {
+    serverUrl: store.get('serverUrl'),
+    tallyHost: store.get('tallyHost'),
+    tallyPort: store.get('tallyPort'),
+    autoStart: store.get('autoStart'),
+    minimizeToTray: store.get('minimizeToTray'),
+    lastSync: store.get('lastSync')
+  };
+});
+
+ipcMain.handle('save-config', (event, config) => {
+  Object.keys(config).forEach(key => {
+    store.set(key, config[key]);
+  });
+
+  // Update Tally connector if host/port changed
+  if (config.tallyHost || config.tallyPort) {
+    tallyConnector.updateConfig({
+      host: store.get('tallyHost'),
+      port: store.get('tallyPort')
+    });
+  }
+
+  return { success: true };
+});
+
+ipcMain.handle('login', async (event, { serverUrl, email, password }) => {
+  try {
+    const axios = require('axios');
+    const response = await axios.post(`${serverUrl}/api/auth/login/`, {
+      email,
+      password
+    });
+
+    const { access, refresh, user } = response.data;
+
+    store.set('serverUrl', serverUrl);
+    store.set('authToken', access);
+    store.set('refreshToken', refresh);
+    store.set('user', user);
+
+    // Initialize WebSocket with new credentials
+    initWebSocket(serverUrl.replace('http', 'ws') + '/ws/setu/', access);
+
+    return { success: true, user };
+  } catch (error) {
+    logger.error('Login error:', error);
+    return {
+      success: false,
+      error: error.response?.data?.detail || error.message
+    };
+  }
+});
+
+ipcMain.handle('logout', () => {
+  store.delete('authToken');
+  store.delete('refreshToken');
+  store.delete('user');
+
+  if (wsClient) {
+    wsClient.disconnect();
+  }
+
+  connectionStatus.server = false;
+  updateTrayIcon();
+
+  return { success: true };
+});
+
+ipcMain.handle('check-tally-connection', async () => {
+  try {
+    const result = await tallyConnector.checkConnection();
+    connectionStatus.tally = result.connected;
+    updateTrayIcon();
+    return result;
+  } catch (error) {
+    connectionStatus.tally = false;
+    updateTrayIcon();
+    return { connected: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-tally-ledgers', async () => {
+  try {
+    const ledgers = await tallyConnector.getLedgers();
+    return { success: true, ledgers };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-queue-status', () => {
+  return queueManager.getStatus();
+});
+
+ipcMain.handle('clear-queue', () => {
+  queueManager.clearQueue();
+  return { success: true };
+});
+
+ipcMain.handle('get-connection-status', () => {
+  return connectionStatus;
+});
+
+ipcMain.handle('get-logs', () => {
+  return logger.getRecentLogs();
+});
+
+// Auto-updater events - setup function to be called after modules are loaded
+function setupAutoUpdater() {
+  if (!autoUpdater) return;
+  
+  autoUpdater.on('checking-for-update', () => {
+    sendToRenderer('update-status', { status: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    sendToRenderer('update-status', { status: 'available', info });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    sendToRenderer('update-status', { status: 'not-available', info });
+  });
+
+  autoUpdater.on('error', (err) => {
+    sendToRenderer('update-status', { status: 'error', error: err.message });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('update-status', { status: 'downloading', progress });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    sendToRenderer('update-status', { status: 'downloaded', info });
+  });
+}
+
+ipcMain.handle('install-update', () => {
+  if (autoUpdater) autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('check-for-updates', () => {
+  if (autoUpdater) autoUpdater.checkForUpdatesAndNotify();
+});
+
+// App lifecycle
+app.whenReady().then(() => {
+  // Load modules now that app is ready
+  loadModules();
+  
+  // Setup auto-updater events
+  setupAutoUpdater();
+  
+  createWindow();
+  createTray();
+  initializeServices();
+
+  // Check for updates on startup
+  if (process.env.NODE_ENV !== 'development' && autoUpdater) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    // Don't quit, keep running in tray
+  }
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+
+  if (wsClient) {
+    wsClient.disconnect();
+  }
+});
+
+// Handle single instance
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
