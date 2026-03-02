@@ -1,5 +1,9 @@
 // Setu Renderer Process
 document.addEventListener('DOMContentLoaded', () => {
+  // Set current year in footer
+  document.querySelectorAll('.current-year').forEach(el => {
+    el.textContent = new Date().getFullYear();
+  });
   // DOM Elements
   const loginScreen = document.getElementById('login-screen');
   const dashboardScreen = document.getElementById('dashboard-screen');
