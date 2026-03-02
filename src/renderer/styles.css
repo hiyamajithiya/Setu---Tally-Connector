@@ -212,15 +212,30 @@ body {
 /* Sidebar */
 .sidebar {
   width: 260px;
-  background: var(--gray-900);
+  background: linear-gradient(180deg, var(--primary) 0%, #4338CA 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 60%);
+  pointer-events: none;
 }
 
 .sidebar-header {
   padding: 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-logo {
@@ -244,6 +259,8 @@ body {
   flex: 1;
   padding: 16px 12px;
   overflow-y: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .nav-section {
@@ -254,7 +271,7 @@ body {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: var(--gray-500);
+  color: rgba(255,255,255,0.5);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 0 12px;
@@ -270,7 +287,7 @@ body {
   background: transparent;
   border: none;
   border-radius: var(--border-radius-sm);
-  color: var(--gray-400);
+  color: rgba(255,255,255,0.75);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -279,13 +296,14 @@ body {
 }
 
 .nav-item:hover {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.12);
   color: white;
 }
 
 .nav-item.active {
-  background: var(--primary);
+  background: rgba(255,255,255,0.2);
   color: white;
+  backdrop-filter: blur(4px);
 }
 
 .nav-item svg {
@@ -299,7 +317,9 @@ body {
 
 .sidebar-footer {
   padding: 16px;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid rgba(255,255,255,0.15);
+  position: relative;
+  z-index: 1;
 }
 
 .connection-status {
@@ -313,14 +333,14 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--gray-400);
+  color: rgba(255,255,255,0.7);
 }
 
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--gray-600);
+  background: rgba(255,255,255,0.3);
 }
 
 .status-dot.connected {
@@ -338,10 +358,10 @@ body {
   gap: 8px;
   width: 100%;
   padding: 10px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--border-radius-sm);
-  color: #F87171;
+  color: rgba(255, 255, 255, 0.85);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -349,7 +369,9 @@ body {
 }
 
 .logout-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #FCA5A5;
 }
 
 /* Main Area */

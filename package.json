@@ -16,7 +16,7 @@
   "build": {
     "appId": "com.nexinvo.setu",
     "productName": "Setu",
-    "copyright": "Copyright © 2024 NexInvo",
+    "copyright": "Copyright © 2026 Chinmay Technosoft Private Limited",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -24,7 +24,6 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
     "win": {
@@ -32,28 +31,20 @@
         {
           "target": "nsis",
           "arch": [
-            "x64",
-            "ia32"
+            "x64"
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "publisherName": "NexInvo"
+      "icon": "assets/icon.png",
+      "publisherName": "Chinmay Technosoft Private Limited",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Setu"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "your-org",
-      "repo": "setu"
+      "shortcutName": "Setu - NexInvo Tally Connector"
     }
   },
   "dependencies": {

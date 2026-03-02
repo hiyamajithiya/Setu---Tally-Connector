@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="40%" stop-color="#312E81"/>
+      <stop offset="100%" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4338CA" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#6366F1" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#B45309"/>
+      <stop offset="25%" stop-color="#D97706"/>
+      <stop offset="50%" stop-color="#FBBF24"/>
+      <stop offset="75%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+    <linearGradient id="cable" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="50%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#4338CA" stop-opacity="0.8"/>
+    </linearGradient>
+    <linearGradient id="towerGold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#B45309"/>
+      <stop offset="30%" stop-color="#FBBF24"/>
+      <stop offset="70%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="waterReflect">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="90" ry="90" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="90" ry="90" fill="url(#sky)"/>
+
+  <!-- Stars in sky -->
+  <g opacity="0.4">
+    <circle cx="80" cy="60" r="1.5" fill="white"/>
+    <circle cx="150" cy="45" r="1" fill="white"/>
+    <circle cx="350" cy="55" r="1.5" fill="white"/>
+    <circle cx="420" cy="70" r="1" fill="white"/>
+    <circle cx="440" cy="40" r="1.2" fill="white"/>
+    <circle cx="200" cy="75" r="1" fill="white"/>
+    <circle cx="300" cy="50" r="0.8" fill="white"/>
+    <circle cx="55" cy="90" r="0.8" fill="white"/>
+    <circle cx="460" cy="95" r="1" fill="white"/>
+  </g>
+
+  <!-- Moon glow behind -->
+  <circle cx="400" cy="80" r="40" fill="#C7D2FE" opacity="0.06"/>
+  <circle cx="400" cy="80" r="22" fill="#E0E7FF" opacity="0.1"/>
+  <circle cx="400" cy="80" r="14" fill="white" opacity="0.15"/>
+
+  <!-- ===== RIVER / WATER ===== -->
+  <path d="M 0 370 Q 60 360 128 365 Q 200 370 256 362 Q 320 355 384 365 Q 450 372 512 365 L 512 512 L 0 512 Z"
+        fill="url(#water)" opacity="0.6"/>
+  <!-- Water ripples -->
+  <path d="M 40 390 Q 80 385 120 390 Q 160 395 200 390" fill="none" stroke="white" stroke-width="1" opacity="0.1"/>
+  <path d="M 250 395 Q 300 390 350 395 Q 400 400 450 395" fill="none" stroke="white" stroke-width="1" opacity="0.08"/>
+  <path d="M 100 410 Q 150 405 200 410 Q 250 415 300 410" fill="none" stroke="white" stroke-width="1" opacity="0.06"/>
+
+  <!-- ===== SUSPENSION BRIDGE (Ram Jhula inspired) ===== -->
+
+  <!-- Bridge deck / walkway -->
+  <rect x="90" y="310" width="332" height="14" rx="3" fill="url(#gold)" filter="url(#glow)"/>
+  <!-- Deck highlights -->
+  <rect x="90" y="310" width="332" height="4" rx="2" fill="#FCD34D" opacity="0.4"/>
+  <!-- Deck railing lines -->
+  <line x1="90" y1="308" x2="422" y2="308" stroke="#FBBF24" stroke-width="2.5" opacity="0.7"/>
+  <line x1="90" y1="326" x2="422" y2="326" stroke="#FBBF24" stroke-width="2.5" opacity="0.7"/>
+
+  <!-- Vertical railing bars -->
+  <g stroke="#FBBF24" stroke-width="1.5" opacity="0.5">
+    <line x1="120" y1="308" x2="120" y2="326"/>
+    <line x1="150" y1="308" x2="150" y2="326"/>
+    <line x1="180" y1="308" x2="180" y2="326"/>
+    <line x1="210" y1="308" x2="210" y2="326"/>
+    <line x1="240" y1="308" x2="240" y2="326"/>
+    <line x1="270" y1="308" x2="270" y2="326"/>
+    <line x1="302" y1="308" x2="302" y2="326"/>
+    <line x1="332" y1="308" x2="332" y2="326"/>
+    <line x1="362" y1="308" x2="362" y2="326"/>
+    <line x1="392" y1="308" x2="392" y2="326"/>
+  </g>
+
+  <!-- ===== LEFT TOWER ===== -->
+  <g>
+    <!-- Tower body -->
+    <rect x="78" y="155" width="36" height="175" rx="4" fill="url(#towerGold)"/>
+    <!-- Tower top dome / shikhara -->
+    <path d="M 78 160 Q 78 130 96 115 Q 114 130 114 160 Z" fill="url(#gold)"/>
+    <!-- Kalash on top -->
+    <circle cx="96" cy="112" r="6" fill="#FCD34D" filter="url(#glow)"/>
+    <circle cx="96" cy="112" r="3" fill="#FEF3C7"/>
+    <!-- Spike -->
+    <line x1="96" y1="106" x2="96" y2="96" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="96" cy="94" r="2.5" fill="#FCD34D"/>
+    <!-- Tower arch window -->
+    <path d="M 88 200 Q 88 185 96 180 Q 104 185 104 200 Z" fill="#312E81" opacity="0.6"/>
+    <!-- Tower horizontal bands -->
+    <line x1="78" y1="170" x2="114" y2="170" stroke="#B45309" stroke-width="2"/>
+    <line x1="78" y1="220" x2="114" y2="220" stroke="#B45309" stroke-width="2"/>
+    <line x1="78" y1="270" x2="114" y2="270" stroke="#B45309" stroke-width="2"/>
+    <!-- Tower base platform -->
+    <rect x="70" y="325" width="52" height="12" rx="3" fill="url(#gold)"/>
+    <rect x="65" y="337" width="62" height="8" rx="3" fill="url(#gold)" opacity="0.8"/>
+  </g>
+
+  <!-- ===== RIGHT TOWER ===== -->
+  <g>
+    <rect x="398" y="155" width="36" height="175" rx="4" fill="url(#towerGold)"/>
+    <path d="M 398 160 Q 398 130 416 115 Q 434 130 434 160 Z" fill="url(#gold)"/>
+    <circle cx="416" cy="112" r="6" fill="#FCD34D" filter="url(#glow)"/>
+    <circle cx="416" cy="112" r="3" fill="#FEF3C7"/>
+    <line x1="416" y1="106" x2="416" y2="96" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="416" cy="94" r="2.5" fill="#FCD34D"/>
+    <path d="M 408 200 Q 408 185 416 180 Q 424 185 424 200 Z" fill="#312E81" opacity="0.6"/>
+    <line x1="398" y1="170" x2="434" y2="170" stroke="#B45309" stroke-width="2"/>
+    <line x1="398" y1="220" x2="434" y2="220" stroke="#B45309" stroke-width="2"/>
+    <line x1="398" y1="270" x2="434" y2="270" stroke="#B45309" stroke-width="2"/>
+    <rect x="390" y="325" width="52" height="12" rx="3" fill="url(#gold)"/>
+    <rect x="385" y="337" width="62" height="8" rx="3" fill="url(#gold)" opacity="0.8"/>
+  </g>
+
+  <!-- ===== SUSPENSION CABLES ===== -->
+  <!-- Main catenary cable (left) -->
+  <path d="M 96 125 Q 140 280 200 305" fill="none" stroke="url(#cable)" stroke-width="4" stroke-linecap="round"/>
+  <!-- Main catenary cable (right) -->
+  <path d="M 416 125 Q 372 280 312 305" fill="none" stroke="url(#cable)" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Vertical suspender cables from main cable to deck -->
+  <g stroke="#FBBF24" stroke-width="1.2" opacity="0.6">
+    <!-- Left side -->
+    <line x1="115" y1="175" x2="115" y2="308"/>
+    <line x1="135" y1="215" x2="135" y2="308"/>
+    <line x1="155" y1="245" x2="155" y2="308"/>
+    <line x1="175" y1="268" x2="175" y2="308"/>
+    <line x1="195" y1="286" x2="195" y2="308"/>
+    <!-- Right side -->
+    <line x1="397" y1="175" x2="397" y2="308"/>
+    <line x1="377" y1="215" x2="377" y2="308"/>
+    <line x1="357" y1="245" x2="357" y2="308"/>
+    <line x1="337" y1="268" x2="337" y2="308"/>
+    <line x1="317" y1="286" x2="317" y2="308"/>
+  </g>
+
+  <!-- ===== Water reflection of bridge (blurred) ===== -->
+  <g opacity="0.12" filter="url(#waterReflect)" transform="translate(0, 680) scale(1, -1)">
+    <rect x="90" y="310" width="332" height="10" fill="#FBBF24"/>
+    <rect x="78" y="155" width="36" height="175" fill="#FBBF24"/>
+    <rect x="398" y="155" width="36" height="175" fill="#FBBF24"/>
+  </g>
+
+  <!-- ===== "सेतु" Devanagari text ===== -->
+  <text x="256" y="270" text-anchor="middle"
+        font-family="Noto Sans Devanagari, Mangal, Kokila, Arial Unicode MS, sans-serif"
+        font-size="60" font-weight="700" fill="white"
+        filter="url(#softGlow)">सेतु</text>
+
+  <!-- ===== Sync arrows (small, under text) ===== -->
+  <g transform="translate(256, 290)" opacity="0.7">
+    <path d="M -18 -4 L 12 -4" stroke="white" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 6 -9 L 14 -4 L 6 1" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 18 8 L -12 8" stroke="white" stroke-width="3" stroke-linecap="round"/>
+    <path d="M -6 3 L -14 8 L -6 13" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- ===== Bottom "SETU" label ===== -->
+  <text x="256" y="460" text-anchor="middle"
+        font-family="Inter, Segoe UI, Arial, sans-serif"
+        font-size="20" font-weight="600" fill="white" opacity="0.45"
+        letter-spacing="7">SETU</text>
+</svg>
