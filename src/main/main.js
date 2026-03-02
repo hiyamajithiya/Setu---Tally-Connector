@@ -503,6 +503,9 @@ async function handleServerMessage(message) {
     case 'GET_STOCK_ITEMS':
       await handleGetStockItems(message.data);
       break;
+    case 'GET_SERVICE_LEDGERS':
+      await handleGetServiceLedgers(message.data);
+      break;
     case 'GET_SALES_VOUCHERS':
       await handleGetSalesVouchers(message.data);
       break;
@@ -693,6 +696,32 @@ async function handleGetStockItems(data = {}) {
   }
 }
 
+async function handleGetServiceLedgers(data = {}) {
+  const requestId = data.request_id || data.requestId || '';
+  logger.info(`Fetching service ledgers from Tally (request_id: ${requestId})`);
+
+  try {
+    const serviceLedgers = await tallyConnector.getServiceLedgers();
+    logger.info(`Fetched ${serviceLedgers.length} service ledgers from Tally`);
+    wsClient.send({
+      type: 'SERVICE_LEDGERS_RESPONSE',
+      data: {
+        service_ledgers: serviceLedgers,
+        request_id: requestId
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to fetch service ledgers:', error.message);
+    wsClient.send({
+      type: 'SERVICE_LEDGERS_ERROR',
+      data: {
+        error: error.message,
+        request_id: requestId
+      }
+    });
+  }
+}
+
 async function handleGetSalesVouchers(data = {}) {
   const requestId = data.request_id || data.requestId || '';
   const startDate = data.start_date || '';
@@ -777,6 +806,7 @@ function sendToRenderer(channel, data) {
 
 // IPC Handlers
 ipcMain.handle('get-config', () => {
+  const user = store.get('user') || {};
   return {
     serverUrl: store.get('serverUrl'),
     authToken: store.get('authToken'),  // Include authToken so renderer can check login status
@@ -784,7 +814,8 @@ ipcMain.handle('get-config', () => {
     tallyPort: store.get('tallyPort'),
     autoStart: store.get('autoStart'),
     minimizeToTray: store.get('minimizeToTray'),
-    lastSync: store.get('lastSync')
+    lastSync: store.get('lastSync'),
+    userEmail: user.email || ''
   };
 });
 
@@ -1090,6 +1121,28 @@ ipcMain.handle('fetch-stock-items', async () => {
   }
 });
 
+// Fetch service ledgers from Tally (Sales Accounts)
+ipcMain.handle('fetch-service-ledgers', async () => {
+  try {
+    const serviceLedgers = await tallyConnector.getServiceLedgers();
+    return { success: true, serviceLedgers };
+  } catch (error) {
+    logger.error('Failed to fetch service ledgers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch recent voucher numbers for prefix detection
+ipcMain.handle('fetch-recent-voucher-numbers', async () => {
+  try {
+    const numbers = await tallyConnector.getRecentVoucherNumbers();
+    return { success: true, voucherNumbers: numbers };
+  } catch (error) {
+    logger.error('Failed to fetch recent voucher numbers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Preview import clients
 ipcMain.handle('preview-import-clients', async (event, parties) => {
   try {
@@ -1178,6 +1231,86 @@ ipcMain.handle('import-products', async (event, items) => {
     return { success: true, ...result };
   } catch (error) {
     logger.error('Failed to import products:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Preview import services
+ipcMain.handle('preview-import-services', async (event, items) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/preview-services/`, {
+      method: 'POST',
+      body: JSON.stringify({ stock_items: items })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to preview services');
+    }
+
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to preview import services:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Import services
+ipcMain.handle('import-services', async (event, items) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-services/`, {
+      method: 'POST',
+      body: JSON.stringify({ stock_items: items })
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to import services');
+    }
+
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to import services:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch company details from Tally
+ipcMain.handle('fetch-company-details', async () => {
+  try {
+    const companyDetails = await tallyConnector.getCompanyDetails();
+    return { success: true, companyDetails };
+  } catch (error) {
+    logger.error('Failed to fetch company details:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Sync company details to NexInvo
+ipcMain.handle('sync-company-to-nexinvo', async (event, companyData) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+
+    const response = await fetchWithAuth(`${serverUrl}/api/settings/company/`, {
+      method: 'PUT',
+      body: JSON.stringify(companyData)
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to update company settings');
+    }
+
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to sync company to NexInvo:', error);
     return { success: false, error: error.message };
   }
 });

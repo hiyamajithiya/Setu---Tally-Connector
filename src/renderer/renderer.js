@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let tallyLedgers = [];
   let tallyParties = [];
   let tallyStockItems = [];
+  let stockItemsAreServices = false; // true when items came from Sales Accounts ledgers
   let selectedParties = new Set();
   let selectedStockItems = new Set();
 
@@ -64,6 +65,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // If we have valid credentials, consider server as connected
         // (the auth token is valid, so we're connected to NexInvo)
         updateServerStatus(true);
+
+        // Populate user email from saved config
+        if (config.userEmail) {
+          const userEmailEl = document.getElementById('user-email');
+          const settingsUserEmail = document.getElementById('settings-user-email');
+          if (userEmailEl) userEmailEl.textContent = config.userEmail;
+          if (settingsUserEmail) settingsUserEmail.textContent = config.userEmail;
+        }
         // Update Tally status from actual connection status
         if (status.tally !== undefined) {
           updateTallyStatus(status.tally);
@@ -213,7 +222,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clearQueueBtn) clearQueueBtn.addEventListener('click', clearQueue);
 
     // Logs refresh
-    document.getElementById('refresh-logs-btn').addEventListener('click', loadLogs);
+    document.getElementById('refresh-logs-btn')?.addEventListener('click', loadLogs);
+
+    // Log filter buttons
+    document.querySelectorAll('.log-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.log-filter').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterLogs(btn.dataset.level);
+      });
+    });
 
     // === Tally Sync Event Listeners ===
 
@@ -252,6 +270,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Import - Fetch buttons
     document.getElementById('fetch-parties-btn')?.addEventListener('click', fetchPartiesFromTally);
     document.getElementById('fetch-stock-btn')?.addEventListener('click', fetchStockFromTally);
+    document.getElementById('fetch-company-btn')?.addEventListener('click', fetchCompanyFromTally);
+    document.getElementById('sync-company-btn')?.addEventListener('click', syncCompanyToNexInvo);
+
+    // Auto-derive state code from GSTIN
+    document.getElementById('company-gstin')?.addEventListener('input', (e) => {
+      const gstin = e.target.value.trim();
+      if (gstin.length >= 2) {
+        document.getElementById('company-state-code').value = gstin.substring(0, 2);
+      }
+    });
 
     // Import - Select all checkboxes
     document.getElementById('select-all-parties')?.addEventListener('change', (e) => {
@@ -492,32 +520,61 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let allLogs = []; // Store logs for filtering
+
   async function loadLogs() {
     try {
       const logs = await window.setu.getLogs();
-      // Support both old and new container IDs
-      const container = document.getElementById('logs-content') || document.getElementById('logs-container');
+      allLogs = logs;
+      const container = document.getElementById('logs-content');
 
       if (!container) return;
 
-      if (logs.length === 0) {
-        container.innerHTML = '<p class="empty-state">No logs available</p>';
-        return;
-      }
+      // Reset filter to "All"
+      document.querySelectorAll('.log-filter').forEach(b => b.classList.remove('active'));
+      document.querySelector('.log-filter[data-level="all"]')?.classList.add('active');
 
-      container.innerHTML = logs.map(log => `
-        <div class="log-entry ${log.level}">
-          <span class="log-time">${formatTime(log.timestamp)}</span>
-          <span class="log-level">[${log.level.toUpperCase()}]</span>
-          <span class="log-message">${escapeHtml(log.message)}</span>
-        </div>
-      `).join('');
-
-      // Scroll to bottom
-      container.scrollTop = container.scrollHeight;
+      renderLogs(logs);
     } catch (error) {
       console.error('Failed to load logs:', error);
     }
+  }
+
+  function filterLogs(level) {
+    if (level === 'all') {
+      renderLogs(allLogs);
+    } else {
+      renderLogs(allLogs.filter(log => log.level === level));
+    }
+  }
+
+  function renderLogs(logs) {
+    const container = document.getElementById('logs-content');
+    if (!container) return;
+
+    // Update count
+    const countEl = document.getElementById('log-count');
+    if (countEl) countEl.textContent = `${logs.length} entries`;
+
+    if (logs.length === 0) {
+      container.innerHTML = '<div class="logs-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><p>No logs to display</p></div>';
+      return;
+    }
+
+    container.innerHTML = logs.map(log => {
+      const levelIcon = log.level === 'error' ? '&#x2716;' : log.level === 'warn' ? '&#x26A0;' : '&#x2139;';
+      return `
+        <div class="log-entry ${log.level}">
+          <span class="log-icon">${levelIcon}</span>
+          <span class="log-time">${formatTime(log.timestamp)}</span>
+          <span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span>
+          <span class="log-message">${escapeHtml(log.message)}</span>
+        </div>
+      `;
+    }).join('');
+
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
   }
 
   function showLogin() {
@@ -796,12 +853,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auto-mapping patterns for each ledger type (used only if no saved mapping)
     const autoMapPatterns = {
-      'sales-ledger': ['sales', 'sale account', 'sales account', 'sales a/c', 'revenue'],
+      'sales-ledger': ['sales', 'sale account', 'sales account', 'sales a/c', 'revenue', 'professional services', 'service charges', 'consulting'],
       'cgst-ledger': ['cgst', 'central gst', 'output cgst', 'cgst output', 'cgst payable'],
       'sgst-ledger': ['sgst', 'state gst', 'output sgst', 'sgst output', 'sgst payable'],
       'igst-ledger': ['igst', 'integrated gst', 'output igst', 'igst output', 'igst payable'],
       'roundoff-ledger': ['round off', 'roundoff', 'rounding off', 'round-off'],
       'discount-ledger': ['discount', 'discount allowed', 'sales discount', 'trade discount']
+    };
+
+    // Parent group fallback: if pattern match fails, match by parent group
+    const autoMapByGroup = {
+      'sales-ledger': ['sales accounts', 'sales account'],
+      'cgst-ledger': ['duties & taxes', 'duties and taxes'],
+      'sgst-ledger': ['duties & taxes', 'duties and taxes'],
+      'igst-ledger': ['duties & taxes', 'duties and taxes'],
+      'roundoff-ledger': ['indirect expenses', 'indirect incomes'],
+      'discount-ledger': ['indirect expenses']
     };
 
     // Try to load saved mappings
@@ -818,15 +885,49 @@ document.addEventListener('DOMContentLoaded', () => {
       const select = document.getElementById(selectId);
       if (!select) return;
 
-      // Keep first option
+      // For the sales ledger, group Sales Accounts at top
       select.innerHTML = '<option value="">Select Ledger</option>';
 
-      ledgers.forEach(ledger => {
-        const option = document.createElement('option');
-        option.value = ledger.name;
-        option.textContent = `${ledger.name} (${ledger.parent || 'N/A'})`;
-        select.appendChild(option);
-      });
+      if (selectId === 'sales-ledger') {
+        // Separate Sales Accounts ledgers from the rest
+        const salesLedgers = ledgers.filter(l =>
+          (l.group || l.parent || '').toLowerCase().includes('sales account')
+        );
+        const otherLedgers = ledgers.filter(l =>
+          !(l.group || l.parent || '').toLowerCase().includes('sales account')
+        );
+
+        if (salesLedgers.length > 0) {
+          const salesGroup = document.createElement('optgroup');
+          salesGroup.label = `Sales Accounts (${salesLedgers.length} ledgers)`;
+          salesLedgers.forEach(ledger => {
+            const option = document.createElement('option');
+            option.value = ledger.name;
+            option.textContent = ledger.name;
+            salesGroup.appendChild(option);
+          });
+          select.appendChild(salesGroup);
+        }
+
+        if (otherLedgers.length > 0) {
+          const otherGroup = document.createElement('optgroup');
+          otherGroup.label = 'Other Ledgers';
+          otherLedgers.forEach(ledger => {
+            const option = document.createElement('option');
+            option.value = ledger.name;
+            option.textContent = `${ledger.name} (${ledger.group || ledger.parent || 'N/A'})`;
+            otherGroup.appendChild(option);
+          });
+          select.appendChild(otherGroup);
+        }
+      } else {
+        ledgers.forEach(ledger => {
+          const option = document.createElement('option');
+          option.value = ledger.name;
+          option.textContent = `${ledger.name} (${ledger.group || ledger.parent || 'N/A'})`;
+          select.appendChild(option);
+        });
+      }
 
       // First priority: Use saved mapping if available
       const configKey = selectToConfigKey[selectId];
@@ -839,7 +940,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Second priority: Auto-map based on patterns
+      // Second priority: Auto-map based on name patterns
+      let mapped = false;
       const patterns = autoMapPatterns[selectId] || [];
       for (const pattern of patterns) {
         const matchedLedger = ledgers.find(l =>
@@ -848,7 +950,22 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         if (matchedLedger) {
           select.value = matchedLedger.name;
+          mapped = true;
           break;
+        }
+      }
+
+      // Third priority: Auto-map by parent group (e.g. first ledger under "Sales Accounts")
+      if (!mapped) {
+        const groupPatterns = autoMapByGroup[selectId] || [];
+        for (const groupPattern of groupPatterns) {
+          const matchedLedger = ledgers.find(l =>
+            (l.group || l.parent || '').toLowerCase() === groupPattern.toLowerCase()
+          );
+          if (matchedLedger) {
+            select.value = matchedLedger.name;
+            break;
+          }
         }
       }
     });
@@ -927,8 +1044,10 @@ document.addEventListener('DOMContentLoaded', () => {
             detectedSpan.textContent = mappings.detectedTallyPrefix;
             detectedSpan.style.color = 'var(--success)';
           } else {
-            detectedSpan.textContent = 'Not detected yet';
+            // No prefix from backend — try detecting from Tally directly
+            detectedSpan.textContent = 'Detecting from Tally...';
             detectedSpan.style.color = 'var(--gray-500)';
+            detectPrefixFromTally(detectedSpan);
           }
         }
 
@@ -946,6 +1065,59 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       console.log('Error loading invoice series settings:', e);
+    }
+  }
+
+  /**
+   * Detect invoice number prefix by fetching voucher numbers directly from Tally
+   */
+  async function detectPrefixFromTally(detectedSpan) {
+    try {
+      const result = await window.setu.fetchRecentVoucherNumbers();
+      if (!result.success || !result.voucherNumbers || result.voucherNumbers.length === 0) {
+        detectedSpan.textContent = 'No invoices found in Tally';
+        detectedSpan.style.color = 'var(--gray-500)';
+        return;
+      }
+
+      const numbers = result.voucherNumbers;
+
+      // Detect prefix from voucher numbers
+      // Match common patterns like 'INV-001', 'SALES/2024/001', 'GST-001', 'A/001', etc.
+      const prefixCounts = {};
+      for (const num of numbers) {
+        const match = num.match(/^([A-Za-z]+[-/]?)/);
+        if (match) {
+          const prefix = match[1];
+          prefixCounts[prefix] = (prefixCounts[prefix] || 0) + 1;
+        }
+      }
+
+      // Find the most common prefix
+      let detectedPrefix = '';
+      let maxCount = 0;
+      for (const [prefix, count] of Object.entries(prefixCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          detectedPrefix = prefix;
+        }
+      }
+
+      if (detectedPrefix) {
+        // Show detected prefix with sample numbers
+        const samples = numbers.slice(0, 3).join(', ');
+        detectedSpan.textContent = `"${detectedPrefix}" (from ${numbers.length} invoices, e.g., ${samples})`;
+        detectedSpan.style.color = 'var(--success)';
+      } else {
+        // No prefix pattern — show sample numbers
+        const samples = numbers.slice(0, 3).join(', ');
+        detectedSpan.textContent = `Numeric only (e.g., ${samples})`;
+        detectedSpan.style.color = 'var(--info, var(--primary))';
+      }
+    } catch (e) {
+      console.log('Error detecting prefix from Tally:', e);
+      detectedSpan.textContent = 'Could not detect (Tally not connected?)';
+      detectedSpan.style.color = 'var(--gray-500)';
     }
   }
 
@@ -1017,6 +1189,171 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       btn.disabled = false;
       btn.textContent = 'Preview & Sync Invoices';
+    }
+  }
+
+  // ==========================================
+  // IMPORT FROM TALLY - COMPANY MASTER
+  // ==========================================
+
+  async function fetchCompanyFromTally() {
+    const btn = document.getElementById('fetch-company-btn');
+    const loading = document.getElementById('company-loading');
+    const formContainer = document.getElementById('company-form-container');
+    const resultDiv = document.getElementById('company-result');
+    const fetchSection = btn.closest('.fetch-section');
+
+    btn.disabled = true;
+    btn.innerHTML = `
+      <svg class="spinning" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 11-6.219-8.56"/>
+      </svg>
+      Fetching...
+    `;
+    loading.classList.remove('hidden');
+    formContainer.classList.add('hidden');
+    resultDiv.classList.add('hidden');
+
+    try {
+      const result = await window.setu.fetchCompanyDetails();
+
+      if (result.success && result.companyDetails) {
+        const company = result.companyDetails;
+
+        // Populate form fields
+        document.getElementById('company-name').value = company.companyName || '';
+        document.getElementById('company-trading-name').value = company.tradingName || '';
+        document.getElementById('company-address').value = company.address || '';
+        document.getElementById('company-city').value = company.city || '';
+        document.getElementById('company-state').value = company.state || '';
+        document.getElementById('company-pincode').value = company.pinCode || '';
+        document.getElementById('company-gstin').value = company.gstin || '';
+        document.getElementById('company-state-code').value = company.stateCode || '';
+        document.getElementById('company-pan').value = company.pan || '';
+        document.getElementById('company-phone').value = company.phone || '';
+        document.getElementById('company-email').value = company.email || '';
+
+        formContainer.classList.remove('hidden');
+        if (fetchSection) fetchSection.classList.add('hidden');
+        showToast('Company details fetched from Tally', 'success');
+      } else {
+        showToast(result.error || 'Failed to fetch company details', 'error');
+      }
+    } catch (error) {
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Fetch Company Details from Tally
+      `;
+      loading.classList.add('hidden');
+    }
+  }
+
+  async function syncCompanyToNexInvo() {
+    const btn = document.getElementById('sync-company-btn');
+    const resultDiv = document.getElementById('company-result');
+
+    const companyData = {
+      companyName: document.getElementById('company-name').value.trim(),
+      tradingName: document.getElementById('company-trading-name').value.trim(),
+      address: document.getElementById('company-address').value.trim(),
+      city: document.getElementById('company-city').value.trim(),
+      state: document.getElementById('company-state').value.trim(),
+      pinCode: document.getElementById('company-pincode').value.trim(),
+      gstin: document.getElementById('company-gstin').value.trim(),
+      stateCode: document.getElementById('company-state-code').value.trim(),
+      pan: document.getElementById('company-pan').value.trim(),
+      phone: document.getElementById('company-phone').value.trim(),
+      email: document.getElementById('company-email').value.trim()
+    };
+
+    // Validate required fields
+    const requiredFields = [
+      { key: 'companyName', id: 'company-name', label: 'Company Name' },
+      { key: 'address', id: 'company-address', label: 'Address' },
+      { key: 'city', id: 'company-city', label: 'City' },
+      { key: 'state', id: 'company-state', label: 'State' }
+    ];
+
+    // Clear previous validation highlights
+    document.querySelectorAll('.company-form-grid input.field-error').forEach(el => {
+      el.classList.remove('field-error');
+    });
+
+    const missing = requiredFields.filter(f => !companyData[f.key]);
+    if (missing.length > 0) {
+      missing.forEach(f => {
+        const input = document.getElementById(f.id);
+        if (input) {
+          input.classList.add('field-error');
+          input.addEventListener('input', function handler() {
+            input.classList.remove('field-error');
+            input.removeEventListener('input', handler);
+          });
+        }
+      });
+      const names = missing.map(f => f.label).join(', ');
+      showToast(`Please fill required fields: ${names}`, 'error');
+      // Focus the first missing field
+      const firstMissing = document.getElementById(missing[0].id);
+      if (firstMissing) firstMissing.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `
+      <svg class="spinning" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 11-6.219-8.56"/>
+      </svg>
+      Syncing...
+    `;
+
+    try {
+      const result = await window.setu.syncCompanyToNexInvo(companyData);
+
+      if (result.success) {
+        resultDiv.innerHTML = `
+          <div class="result-success">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span>Company details synced to NexInvo successfully!</span>
+          </div>
+        `;
+        resultDiv.classList.remove('hidden');
+        showToast('Company details synced to NexInvo', 'success');
+      } else {
+        resultDiv.innerHTML = `
+          <div class="result-error">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="15" y1="9" x2="9" y2="15"/>
+              <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>${result.error || 'Failed to sync company details'}</span>
+          </div>
+        `;
+        resultDiv.classList.remove('hidden');
+        showToast(result.error || 'Failed to sync', 'error');
+      }
+    } catch (error) {
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14"/>
+          <path d="M12 5l7 7-7 7"/>
+        </svg>
+        Sync to NexInvo
+      `;
     }
   }
 
@@ -1162,10 +1499,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updateImportStep(2);
 
     try {
+      // First try stock items (for goods traders)
       const result = await window.setu.fetchStockItems();
 
-      if (result.success && result.stockItems) {
+      if (result.success && result.stockItems && result.stockItems.length > 0) {
         tallyStockItems = result.stockItems;
+        stockItemsAreServices = false;
         selectedStockItems.clear();
         renderStockList();
         list.classList.remove('hidden');
@@ -1174,8 +1513,24 @@ document.addEventListener('DOMContentLoaded', () => {
         updateImportStep(3);
         showToast(`Found ${result.stockItems.length} stock items in Tally`, 'success');
       } else {
-        showToast(result.error || 'Failed to fetch stock items', 'error');
-        updateImportStep(2);
+        // No stock items found — try service ledgers (Sales Accounts)
+        console.log('No stock items found, trying service ledgers from Sales Accounts...');
+        const serviceResult = await window.setu.fetchServiceLedgers();
+
+        if (serviceResult.success && serviceResult.serviceLedgers && serviceResult.serviceLedgers.length > 0) {
+          tallyStockItems = serviceResult.serviceLedgers;
+          stockItemsAreServices = true;
+          selectedStockItems.clear();
+          renderStockList();
+          list.classList.remove('hidden');
+          if (fetchSection) fetchSection.classList.add('hidden');
+          document.getElementById('stock-count').textContent = `${serviceResult.serviceLedgers.length} services found`;
+          updateImportStep(3);
+          showToast(`Found ${serviceResult.serviceLedgers.length} services in Tally (Sales Accounts)`, 'success');
+        } else {
+          showToast('No stock items or services found in Tally', 'error');
+          updateImportStep(2);
+        }
       }
     } catch (error) {
       showToast(`Error: ${error.message}`, 'error');
@@ -1188,7 +1543,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <polyline points="7 10 12 15 17 10"/>
           <line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
-        Fetch Stock Items from Tally
+        Fetch from Tally
       `;
       loading.classList.add('hidden');
     }
@@ -1207,9 +1562,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="item-checkbox"></div>
         <div class="item-info">
           <div class="item-name">${escapeHtml(item.name)}</div>
-          <div class="item-detail">HSN: ${item.hsn_code || 'N/A'} | Rate: ${item.rate || 0}</div>
+          <div class="item-detail">${stockItemsAreServices
+            ? `Group: ${item.group || 'Sales Accounts'}`
+            : `HSN: ${item.hsn_code || 'N/A'} | Rate: ${item.rate || 0}`}</div>
         </div>
-        ${item.hsn_code ? '<span class="item-badge">HSN</span>' : ''}
+        ${stockItemsAreServices
+          ? '<span class="item-badge" style="background:linear-gradient(135deg,#8b5cf6,#a855f7)">Service</span>'
+          : (item.hsn_code ? '<span class="item-badge">HSN</span>' : '')}
       </div>
     `).join('');
 
@@ -1248,10 +1607,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemsToImport = Array.from(selectedStockItems).map(idx => tallyStockItems[idx]);
 
     try {
-      const result = await window.setu.previewImportProducts(itemsToImport);
+      // Use services or products endpoint based on what was fetched
+      const result = stockItemsAreServices
+        ? await window.setu.previewImportServices(itemsToImport)
+        : await window.setu.previewImportProducts(itemsToImport);
 
       if (result.success) {
-        showImportPreviewModal('products', result);
+        showImportPreviewModal(stockItemsAreServices ? 'services' : 'products', result);
       } else {
         showToast(result.error || 'Failed to preview', 'error');
       }
@@ -1348,15 +1710,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (type === 'clients') {
         const partiesToImport = Array.from(selectedParties).map(idx => tallyParties[idx]);
         result = await window.setu.importClients(partiesToImport);
+      } else if (type === 'services') {
+        const itemsToImport = Array.from(selectedStockItems).map(idx => tallyStockItems[idx]);
+        result = await window.setu.importServices(itemsToImport);
       } else {
         const itemsToImport = Array.from(selectedStockItems).map(idx => tallyStockItems[idx]);
         result = await window.setu.importProducts(itemsToImport);
       }
 
-      if (result.success) {
-        // Backend returns created_count and updated_count
-        const created = result.created_count || result.created || 0;
-        const updated = result.updated_count || result.updated || 0;
+      const created = result.created_count || result.created || 0;
+      const updated = result.updated_count || result.updated || 0;
+      const importErrors = result.errors || [];
+
+      if (result.success && (created > 0 || updated > 0)) {
         showToast(`Imported: ${created} created, ${updated} updated`, 'success');
         // Clear selections
         if (type === 'clients') {
@@ -1366,8 +1732,17 @@ document.addEventListener('DOMContentLoaded', () => {
           selectedStockItems.clear();
           renderStockList();
         }
-      } else {
+      } else if (importErrors.length > 0) {
+        // Show first error to help debug
+        console.error('Import errors:', importErrors);
+        const errorSummary = importErrors.length === 1
+          ? importErrors[0]
+          : `${importErrors.length} errors. First: ${importErrors[0]}`;
+        showToast(`Import failed: ${errorSummary}`, 'error');
+      } else if (!result.success) {
         showToast(result.error || 'Import failed', 'error');
+      } else {
+        showToast(`Imported: ${created} created, ${updated} updated`, 'success');
       }
     } catch (error) {
       showToast(`Error: ${error.message}`, 'error');

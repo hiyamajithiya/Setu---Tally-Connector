@@ -901,10 +901,329 @@ class TallyConnector {
     return items;
   }
 
+  /**
+   * Get service ledgers from Tally (ledgers under "Sales Accounts" group)
+   * Used for service providers who don't have stock items
+   */
+  async getServiceLedgers() {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>SalesLedgers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="SalesLedgers">
+            <TYPE>Ledger</TYPE>
+            <CHILDOF>Sales Accounts</CHILDOF>
+            <BELONGSTO>Yes</BELONGSTO>
+            <FETCH>NAME, PARENT, DESCRIPTION</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+    try {
+      const response = await this.sendRequest(xml);
+      return await this.parseServiceLedgersResponse(response);
+    } catch (error) {
+      logger.error("Failed to get service ledgers:", error);
+      throw error;
+    }
+  }
+
+  async parseServiceLedgersResponse(xmlResponse) {
+    const services = [];
+
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let ledgerList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          ledgerList = coll.LEDGER || [];
+        } else if (collection.LEDGER) {
+          ledgerList = collection.LEDGER || [];
+        }
+      }
+
+      if (!Array.isArray(ledgerList)) ledgerList = [ledgerList];
+
+      for (const ledger of ledgerList) {
+        const name = (ledger.$ && ledger.$.NAME) || this.getXml2jsValue(ledger.NAME) || '';
+        if (name.trim()) {
+          services.push({
+            name: name.trim(),
+            group: this.getXml2jsValue(ledger.PARENT) || 'Sales Accounts',
+            description: this.getXml2jsValue(ledger.DESCRIPTION) || '',
+            hsn_code: '',
+            unit: '',
+            rate: 0,
+            _isService: true
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for service ledgers, falling back to regex:', error.message);
+      const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/LEDGER>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const content = match[2];
+        if (name) {
+          services.push({
+            name,
+            group: this.extractTagValue(content, "PARENT") || 'Sales Accounts',
+            description: this.extractTagValue(content, "DESCRIPTION") || '',
+            hsn_code: '',
+            unit: '',
+            rate: 0,
+            _isService: true
+          });
+        }
+      }
+    }
+    return services;
+  }
+
+  /**
+   * Get company master details from Tally
+   */
+  async getCompanyDetails() {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>CompanyDetails</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="CompanyDetails">
+            <TYPE>Company</TYPE>
+            <FETCH>NAME, BASICCOMPANYFORMALNAME, ADDRESS, STATENAME, PINCODE, PHONENUMBER, EMAIL, GSTIN, PANNUMBER, INCOMETAXNUMBER, COUNTRYNAME</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const response = await this.sendRequest(xml);
+      logger.info('Tally getCompanyDetails response length:', response ? response.length : 0);
+      return await this.parseCompanyDetailsResponse(response);
+    } catch (error) {
+      logger.error('Failed to get company details:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Parse company details from Tally response
+   */
+  async parseCompanyDetailsResponse(xmlResponse) {
+    const company = {
+      companyName: '',
+      tradingName: '',
+      address: '',
+      city: '',
+      state: '',
+      pinCode: '',
+      stateCode: '',
+      gstin: '',
+      pan: '',
+      phone: '',
+      email: ''
+    };
+
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let companyNode = null;
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          const companies = coll.COMPANY || [];
+          companyNode = Array.isArray(companies) ? companies[0] : companies;
+        } else if (collection.COMPANY) {
+          const companies = collection.COMPANY;
+          companyNode = Array.isArray(companies) ? companies[0] : companies;
+        }
+      }
+
+      if (companyNode) {
+        company.companyName = (companyNode.$ && companyNode.$.NAME) || this.getXml2jsValue(companyNode.NAME) || '';
+        company.tradingName = this.getXml2jsValue(companyNode.BASICCOMPANYFORMALNAME) || '';
+
+        // Parse address - may be in ADDRESS.LIST or ADDRESS
+        let fullAddress = '';
+        if (companyNode['ADDRESS.LIST']) {
+          const addrList = Array.isArray(companyNode['ADDRESS.LIST']) ? companyNode['ADDRESS.LIST'][0] : companyNode['ADDRESS.LIST'];
+          const addrItems = addrList.ADDRESS || [];
+          if (Array.isArray(addrItems)) {
+            fullAddress = addrItems.map(a => typeof a === 'string' ? a : (a._ || '')).join(', ');
+          } else {
+            fullAddress = typeof addrItems === 'string' ? addrItems : (addrItems._ || '');
+          }
+        } else {
+          fullAddress = this.getXml2jsValue(companyNode.ADDRESS) || '';
+        }
+        company.address = fullAddress.trim();
+
+        company.state = this.getXml2jsValue(companyNode.STATENAME) || '';
+        company.pinCode = this.getXml2jsValue(companyNode.PINCODE) || '';
+        company.phone = this.getXml2jsValue(companyNode.PHONENUMBER) || '';
+        company.email = this.getXml2jsValue(companyNode.EMAIL) || '';
+        company.gstin = this.getXml2jsValue(companyNode.GSTIN) || '';
+        company.pan = this.getXml2jsValue(companyNode.PANNUMBER) || this.getXml2jsValue(companyNode.INCOMETAXNUMBER) || '';
+
+        // Derive stateCode from GSTIN (first 2 digits)
+        if (company.gstin && company.gstin.length >= 2) {
+          company.stateCode = company.gstin.substring(0, 2);
+        }
+
+        // Try to extract city from address (last line before state/pincode)
+        if (company.address && !company.city) {
+          const addressParts = company.address.split(',').map(p => p.trim()).filter(Boolean);
+          if (addressParts.length > 1) {
+            company.city = addressParts[addressParts.length - 1];
+            company.address = addressParts.slice(0, -1).join(', ');
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for company details, falling back to regex:', error.message);
+      // Regex fallback
+      const nameMatch = xmlResponse.match(/<COMPANY[^>]*NAME="([^"]+)"/i);
+      if (nameMatch) company.companyName = this.decodeXmlEntities(nameMatch[1]);
+
+      company.tradingName = this.extractTagValue(xmlResponse, 'BASICCOMPANYFORMALNAME');
+      company.state = this.extractTagValue(xmlResponse, 'STATENAME');
+      company.pinCode = this.extractTagValue(xmlResponse, 'PINCODE');
+      company.phone = this.extractTagValue(xmlResponse, 'PHONENUMBER');
+      company.email = this.extractTagValue(xmlResponse, 'EMAIL');
+      company.gstin = this.extractTagValue(xmlResponse, 'GSTIN');
+      company.pan = this.extractTagValue(xmlResponse, 'PANNUMBER') || this.extractTagValue(xmlResponse, 'INCOMETAXNUMBER');
+
+      // Extract address
+      const addrMatch = xmlResponse.match(/<ADDRESS>([^<]*)<\/ADDRESS>/i);
+      if (addrMatch) company.address = this.decodeXmlEntities(addrMatch[1]);
+
+      if (company.gstin && company.gstin.length >= 2) {
+        company.stateCode = company.gstin.substring(0, 2);
+      }
+    }
+
+    logger.info(`Parsed company details: ${company.companyName}`);
+    return company;
+  }
+
   extractTagValue(content, tagName) {
     const pattern = new RegExp(`<${tagName}[^>]*>([^<]*)</${tagName}>`, "i");
     const match = content.match(pattern);
     return match ? this.decodeXmlEntities(match[1]).trim() : "";
+  }
+
+  /**
+   * Fetch recent voucher numbers from Tally for prefix detection
+   * Returns just the voucher numbers (lightweight query)
+   */
+  async getRecentVoucherNumbers() {
+    // Get vouchers from current financial year
+    const now = new Date();
+    const fyStart = now.getMonth() >= 3
+      ? `${now.getFullYear()}0401`
+      : `${now.getFullYear() - 1}0401`;
+    const fyEnd = this.formatTallyDate(now.toISOString().split('T')[0]);
+
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>RecentVoucherNumbers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${fyStart}</SVFROMDATE>
+        <SVTODATE>${fyEnd}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="RecentVoucherNumbers">
+            <TYPE>Voucher</TYPE>
+            <FILTER>SalesFilter</FILTER>
+            <FETCH>VOUCHERNUMBER</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="SalesFilter">
+            $VOUCHERTYPENAME = "Sales" AND NOT $$IsEmpty:$VOUCHERNUMBER
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const response = await this.sendRequest(xml);
+      const parsed = await this.parseXmlResponse(response);
+      const envelope = parsed.ENVELOPE || parsed;
+      let voucherList = [];
+
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          voucherList = coll.VOUCHER || [];
+        } else if (collection.VOUCHER) {
+          voucherList = collection.VOUCHER || [];
+        }
+      }
+
+      if (!Array.isArray(voucherList)) voucherList = [voucherList];
+
+      const numbers = [];
+      for (const v of voucherList) {
+        const num = this.getXml2jsValue(v.VOUCHERNUMBER) || '';
+        if (num) numbers.push(num);
+      }
+
+      logger.info(`Fetched ${numbers.length} voucher numbers for prefix detection`);
+      return numbers;
+    } catch (error) {
+      logger.error('Failed to fetch voucher numbers for prefix detection:', error);
+      return [];
+    }
   }
 
   /**

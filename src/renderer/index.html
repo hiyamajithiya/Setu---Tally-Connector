@@ -119,13 +119,6 @@
 
             <div class="nav-section">
               <span class="nav-section-title">Tally Sync</span>
-              <button class="nav-item" data-tab="ledger-mapping">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                </svg>
-                <span>Ledger Mapping</span>
-              </button>
               <button class="nav-item" data-tab="import-tally">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -133,6 +126,13 @@
                   <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
                 <span>Import from Tally</span>
+              </button>
+              <button class="nav-item" data-tab="ledger-mapping">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                </svg>
+                <span>Ledger Mapping</span>
               </button>
               <button class="nav-item" data-tab="manual-sync">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -845,7 +845,29 @@
                 <div class="import-type-section">
                   <h4 class="section-title">What would you like to import?</h4>
                   <div class="import-type-cards">
-                    <div class="import-type-card active" data-import-tab="clients">
+                    <div class="import-type-card active" data-import-tab="company">
+                      <div class="type-card-icon company-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M3 21h18"/>
+                          <path d="M5 21V7l8-4v18"/>
+                          <path d="M19 21V11l-6-4"/>
+                          <path d="M9 9h1"/>
+                          <path d="M9 13h1"/>
+                          <path d="M9 17h1"/>
+                        </svg>
+                      </div>
+                      <div class="type-card-content">
+                        <h5>Company Master</h5>
+                        <p>Import company details like name, address, GSTIN, PAN from Tally</p>
+                      </div>
+                      <div class="type-card-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div class="import-type-card" data-import-tab="clients">
                       <div class="type-card-icon clients-icon">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -886,8 +908,101 @@
                   </div>
                 </div>
 
+                <!-- Company Master Import Section -->
+                <div id="import-company-content" class="import-content">
+                  <div class="fetch-section">
+                    <div class="fetch-info">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      <span>Fetch your company details from Tally and sync them to NexInvo</span>
+                    </div>
+                    <button class="btn btn-fetch" id="fetch-company-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Company Details from Tally
+                    </button>
+                  </div>
+
+                  <div id="company-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Connecting to Tally and fetching company details...</p>
+                  </div>
+
+                  <div id="company-form-container" class="company-form-container hidden">
+                    <div class="company-form-card">
+                      <div class="company-form-header">
+                        <h4>Company Details</h4>
+                        <p>Review and edit the details before syncing to NexInvo</p>
+                      </div>
+                      <div class="company-form-grid">
+                        <div class="form-group">
+                          <label for="company-name">Company Name <span class="required">*</span></label>
+                          <input type="text" id="company-name" placeholder="Company Name" required>
+                        </div>
+                        <div class="form-group">
+                          <label for="company-trading-name">Trading Name</label>
+                          <input type="text" id="company-trading-name" placeholder="Trading / Formal Name">
+                        </div>
+                        <div class="form-group full-width">
+                          <label for="company-address">Address <span class="required">*</span></label>
+                          <input type="text" id="company-address" placeholder="Address" required>
+                        </div>
+                        <div class="form-group">
+                          <label for="company-city">City <span class="required">*</span></label>
+                          <input type="text" id="company-city" placeholder="City" required>
+                        </div>
+                        <div class="form-group">
+                          <label for="company-state">State <span class="required">*</span></label>
+                          <input type="text" id="company-state" placeholder="State" required>
+                        </div>
+                        <div class="form-group">
+                          <label for="company-pincode">Pin Code</label>
+                          <input type="text" id="company-pincode" placeholder="Pin Code">
+                        </div>
+                        <div class="form-group">
+                          <label for="company-gstin">GSTIN</label>
+                          <input type="text" id="company-gstin" placeholder="GSTIN" maxlength="15">
+                        </div>
+                        <div class="form-group">
+                          <label for="company-state-code">State Code</label>
+                          <input type="text" id="company-state-code" placeholder="State Code" maxlength="2" readonly>
+                        </div>
+                        <div class="form-group">
+                          <label for="company-pan">PAN</label>
+                          <input type="text" id="company-pan" placeholder="PAN Number" maxlength="10">
+                        </div>
+                        <div class="form-group">
+                          <label for="company-phone">Phone</label>
+                          <input type="text" id="company-phone" placeholder="Phone Number">
+                        </div>
+                        <div class="form-group">
+                          <label for="company-email">Email</label>
+                          <input type="email" id="company-email" placeholder="Email Address">
+                        </div>
+                      </div>
+                      <div class="import-actions">
+                        <button class="btn btn-import" id="sync-company-btn">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14"/>
+                            <path d="M12 5l7 7-7 7"/>
+                          </svg>
+                          Sync to NexInvo
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="company-result" class="import-result hidden"></div>
+                </div>
+
                 <!-- Clients Import Section -->
-                <div id="import-clients-content" class="import-content">
+                <div id="import-clients-content" class="import-content hidden">
                   <div class="fetch-section">
                     <div class="fetch-info">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1206,23 +1321,26 @@
 
             <!-- Logs Tab -->
             <div id="logs-tab" class="tab-content hidden">
-              <div class="page-container">
-                <div class="page-header">
-                  <div class="page-header-icon">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                      <polyline points="14 2 14 8 20 8"/>
-                      <line x1="16" y1="13" x2="8" y2="13"/>
-                      <line x1="16" y1="17" x2="8" y2="17"/>
-                      <polyline points="10 9 9 9 8 9"/>
-                    </svg>
+              <div class="logs-page">
+                <!-- Header -->
+                <div class="logs-page-header">
+                  <div class="logs-header-left">
+                    <div class="logs-header-icon">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10 9 9 9 8 9"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2>Activity Logs</h2>
+                      <p>Application activity and sync events</p>
+                    </div>
                   </div>
-                  <div class="page-header-text">
-                    <h2>Activity Logs</h2>
-                    <p>View recent application activity and debug information</p>
-                  </div>
-                  <button class="btn btn-secondary" id="refresh-logs-btn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <button class="btn-refresh-logs" id="refresh-logs-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="23 4 23 10 17 10"/>
                       <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
                     </svg>
@@ -1230,17 +1348,54 @@
                   </button>
                 </div>
 
-                <div class="logs-container">
-                  <div class="logs-toolbar">
-                    <div class="log-filters">
-                      <button class="log-filter active" data-level="all">All</button>
-                      <button class="log-filter" data-level="info">Info</button>
-                      <button class="log-filter" data-level="warn">Warnings</button>
-                      <button class="log-filter" data-level="error">Errors</button>
-                    </div>
+                <!-- Filters -->
+                <div class="logs-filter-bar">
+                  <div class="log-filters">
+                    <button class="log-filter active" data-level="all">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="8" y1="12" x2="16" y2="12"/>
+                      </svg>
+                      All
+                    </button>
+                    <button class="log-filter" data-level="info">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      Info
+                    </button>
+                    <button class="log-filter" data-level="warn">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                      Warnings
+                    </button>
+                    <button class="log-filter" data-level="error">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                      </svg>
+                      Errors
+                    </button>
                   </div>
+                  <span class="log-count" id="log-count"></span>
+                </div>
+
+                <!-- Log Content -->
+                <div class="logs-panel">
                   <div id="logs-content" class="logs-content">
-                    <p class="empty-state">Loading logs...</p>
+                    <div class="logs-empty">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      <p>Loading logs...</p>
+                    </div>
                   </div>
                 </div>
               </div>

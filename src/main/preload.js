@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('setu', {
 
   // Tally Sync - Sync Invoices
   syncInvoices: (params) => ipcRenderer.invoke('sync-invoices', params),
+  fetchRecentVoucherNumbers: () => ipcRenderer.invoke('fetch-recent-voucher-numbers'),
 
   // Tally Sync - Manual Sync with Preview
   getManualSyncPreview: (params) => ipcRenderer.invoke('get-manual-sync-preview', params),
@@ -29,10 +30,17 @@ contextBridge.exposeInMainWorld('setu', {
   // Tally Sync - Import from Tally
   fetchParties: () => ipcRenderer.invoke('fetch-parties'),
   fetchStockItems: () => ipcRenderer.invoke('fetch-stock-items'),
+  fetchServiceLedgers: () => ipcRenderer.invoke('fetch-service-ledgers'),
   previewImportClients: (parties) => ipcRenderer.invoke('preview-import-clients', parties),
   previewImportProducts: (items) => ipcRenderer.invoke('preview-import-products', items),
+  previewImportServices: (items) => ipcRenderer.invoke('preview-import-services', items),
   importClients: (parties) => ipcRenderer.invoke('import-clients', parties),
   importProducts: (items) => ipcRenderer.invoke('import-products', items),
+  importServices: (items) => ipcRenderer.invoke('import-services', items),
+
+  // Tally Sync - Company Master Import
+  fetchCompanyDetails: () => ipcRenderer.invoke('fetch-company-details'),
+  syncCompanyToNexInvo: (data) => ipcRenderer.invoke('sync-company-to-nexinvo', data),
 
   // Tally Sync - Real-Time Sync
   performRealtimeSync: () => ipcRenderer.invoke('perform-realtime-sync'),
