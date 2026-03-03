@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
-  <title>Setu - NexInvo Tally Connector</title>
+  <title>Setu - Tally Integration Bridge</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,20 +18,20 @@
               <img src="../../assets/icon.png" alt="Setu" width="80" height="80" style="border-radius: 16px;">
               <span>Setu</span>
             </div>
-            <h1>Connect Tally to NexInvo</h1>
-            <p>Seamlessly sync your invoices, clients, and products between Tally and NexInvo</p>
+            <h1>Seamless Tally Integration</h1>
+            <p>Connect Tally to <strong>NexInvo</strong> or <strong>NexInvo+</strong> &mdash; sync invoices, clients, and products effortlessly</p>
             <div class="login-features">
               <div class="feature-item">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
-                <span>Real-time invoice synchronization</span>
+                <span>Two-way invoice synchronization</span>
               </div>
               <div class="feature-item">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
-                <span>Import clients & products from Tally</span>
+                <span>Import clients, products & company details</span>
               </div>
               <div class="feature-item">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -39,22 +39,27 @@
                 </svg>
                 <span>Automatic ledger mapping</span>
               </div>
+              <div class="feature-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>Real-time & scheduled auto-sync</span>
+              </div>
             </div>
           </div>
         </div>
         <div class="login-right">
           <div class="login-container">
             <h2>Sign In</h2>
-            <p class="login-subtitle">Enter your NexInvo credentials to continue</p>
+            <p class="login-subtitle">Sign in with your <span class="app-name">NexInvo</span> credentials</p>
 
             <form id="login-form">
               <div class="form-group">
                 <label for="app-select">Connect to</label>
                 <select id="app-select" required>
-                  <option value="" disabled>Select Application</option>
-                  <option value="http://localhost:8000" selected>NexInvo (Local Development)</option>
-                  <option value="https://www.nexinvo.in">NexInvo (Production)</option>
-                  <option value="custom">Custom URL</option>
+                  <option value="" disabled selected>Select Application</option>
+                  <option value="https://www.nexinvo.in" data-app="nexinvo">NexInvo</option>
+                  <option value="https://app.nexinvoplus.in" data-app="nexinvo-plus">NexInvo+</option>
                 </select>
               </div>
               <div class="form-group hidden" id="custom-url-group">
@@ -78,7 +83,7 @@
             </form>
 
             <div class="login-footer">
-              <p>By signing in, you agree to NexInvo's Terms of Service</p>
+              <p>By signing in, you agree to <span class="app-name">NexInvo</span>'s Terms of Service</p>
             </div>
           </div>
         </div>
@@ -176,7 +181,7 @@
             <div class="connection-status">
               <div class="status-indicator" id="sidebar-server-status">
                 <span class="status-dot disconnected"></span>
-                <span>NexInvo</span>
+                <span id="sidebar-app-name">NexInvo</span>
               </div>
               <div class="status-indicator" id="sidebar-tally-status">
                 <span class="status-dot disconnected"></span>
@@ -245,7 +250,7 @@
                         </svg>
                       </div>
                       <div class="conn-info">
-                        <span class="conn-name">NexInvo Server</span>
+                        <span class="conn-name" id="server-conn-name">NexInvo Server</span>
                         <span class="conn-status" id="server-status-text">Disconnected</span>
                       </div>
                       <div class="conn-indicator disconnected"></div>
@@ -379,7 +384,7 @@
                   </div>
                   <div class="page-header-text">
                     <h2>Ledger Mapping</h2>
-                    <p>Map your Tally ledgers to NexInvo for accurate invoice synchronization</p>
+                    <p>Map your Tally ledgers to <span class="app-name">NexInvo</span> for accurate invoice synchronization</p>
                   </div>
                 </div>
 
@@ -513,9 +518,9 @@
                           <div class="radio-card-content">
                             <div class="radio-card-header">
                               <span class="radio-indicator"></span>
-                              <strong>Use NexInvo Series</strong>
+                              <strong>Use <span class="app-name">NexInvo</span> Series</strong>
                             </div>
-                            <p class="radio-card-desc">Generate new NexInvo invoice numbers (continues your existing series)</p>
+                            <p class="radio-card-desc">Generate new <span class="app-name">NexInvo</span> invoice numbers (continues your existing series)</p>
                           </div>
                         </label>
 
@@ -583,7 +588,7 @@
                   </div>
                   <div class="page-header-text">
                     <h2>Manual Sync</h2>
-                    <p>Two-way sync between NexInvo and Tally with preview and approval</p>
+                    <p>Two-way sync between <span class="app-name">NexInvo</span> and Tally with preview and approval</p>
                   </div>
                 </div>
 
@@ -619,7 +624,7 @@
                   <!-- Fetching Progress -->
                   <div id="manual-sync-loading" class="loading-state hidden">
                     <div class="loader"></div>
-                    <p>Fetching invoices from Tally and NexInvo...</p>
+                    <p>Fetching invoices from Tally and <span class="app-name">NexInvo</span>...</p>
                   </div>
 
                   <!-- Step 2: Preview Results -->
@@ -653,7 +658,7 @@
                         </div>
                         <div class="summary-content">
                           <span class="summary-number" id="to-nexinvo-count">0</span>
-                          <span class="summary-label">Import to NexInvo</span>
+                          <span class="summary-label">Import to <span class="app-name">NexInvo</span></span>
                         </div>
                       </div>
                       <div class="summary-card to-tally">
@@ -702,8 +707,8 @@
                     <div class="sync-preview-section active" id="section-to-nexinvo">
                       <div class="section-header">
                         <div class="section-info">
-                          <h5>Tally Invoices to Import to NexInvo</h5>
-                          <p>These invoices exist in Tally but not in NexInvo</p>
+                          <h5>Tally Invoices to Import to <span class="app-name">NexInvo</span></h5>
+                          <p>These invoices exist in Tally but not in <span class="app-name">NexInvo</span></p>
                         </div>
                         <label class="select-all-checkbox">
                           <input type="checkbox" id="select-all-to-nexinvo">
@@ -720,8 +725,8 @@
                     <div class="sync-preview-section hidden" id="section-to-tally">
                       <div class="section-header">
                         <div class="section-info">
-                          <h5>NexInvo Invoices to Export to Tally</h5>
-                          <p>These invoices exist in NexInvo but not in Tally</p>
+                          <h5><span class="app-name">NexInvo</span> Invoices to Export to Tally</h5>
+                          <p>These invoices exist in <span class="app-name">NexInvo</span> but not in Tally</p>
                         </div>
                         <label class="select-all-checkbox">
                           <input type="checkbox" id="select-all-to-tally">
@@ -787,7 +792,7 @@
                     <div class="result-stats">
                       <div class="result-stat">
                         <span class="stat-value" id="result-to-nexinvo">0</span>
-                        <span class="stat-label">Imported to NexInvo</span>
+                        <span class="stat-label">Imported to <span class="app-name">NexInvo</span></span>
                       </div>
                       <div class="result-stat">
                         <span class="stat-value" id="result-to-tally">0</span>
@@ -816,7 +821,7 @@
                   </div>
                   <div class="import-header-text">
                     <h2>Import from Tally</h2>
-                    <p>Bring your Tally data into NexInvo with just a few clicks</p>
+                    <p>Bring your Tally data into <span class="app-name">NexInvo</span> with just a few clicks</p>
                   </div>
                 </div>
 
@@ -914,7 +919,7 @@
                         <line x1="12" y1="16" x2="12" y2="12"/>
                         <line x1="12" y1="8" x2="12.01" y2="8"/>
                       </svg>
-                      <span>Fetch your company details from Tally and sync them to NexInvo</span>
+                      <span>Fetch your company details from Tally and sync them to <span class="app-name">NexInvo</span></span>
                     </div>
                     <button class="btn btn-fetch" id="fetch-company-btn">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -935,7 +940,7 @@
                     <div class="company-form-card">
                       <div class="company-form-header">
                         <h4>Company Details</h4>
-                        <p>Review and edit the details before syncing to NexInvo</p>
+                        <p>Review and edit the details before syncing to <span class="app-name">NexInvo</span></p>
                       </div>
                       <div class="company-form-grid">
                         <div class="form-group">
@@ -989,7 +994,7 @@
                             <path d="M5 12h14"/>
                             <path d="M12 5l7 7-7 7"/>
                           </svg>
-                          Sync to NexInvo
+                          Sync to <span class="app-name">NexInvo</span>
                         </button>
                       </div>
                     </div>
@@ -1045,7 +1050,7 @@
                           <path d="M5 12h14"/>
                           <path d="M12 5l7 7-7 7"/>
                         </svg>
-                        Import Selected to NexInvo
+                        Import Selected to <span class="app-name">NexInvo</span>
                       </button>
                     </div>
                   </div>
@@ -1098,7 +1103,7 @@
                           <path d="M5 12h14"/>
                           <path d="M12 5l7 7-7 7"/>
                         </svg>
-                        Import Selected to NexInvo
+                        Import Selected to <span class="app-name">NexInvo</span>
                       </button>
                     </div>
                   </div>
@@ -1119,7 +1124,7 @@
                   </div>
                   <div class="page-header-text">
                     <h2>Auto Sync</h2>
-                    <p>Automatically sync invoices between Tally and NexInvo at regular intervals</p>
+                    <p>Automatically sync invoices between Tally and <span class="app-name">NexInvo</span> at regular intervals</p>
                   </div>
                 </div>
 

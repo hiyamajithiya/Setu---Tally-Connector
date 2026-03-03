@@ -40,6 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedParties = new Set();
   let selectedStockItems = new Set();
 
+  // Connected app type (nexinvo or nexinvo-plus)
+  let currentAppType = 'nexinvo';
+
   // Real-Time Sync state
   let autoSyncEnabled = false;
   let autoSyncInterval = null;
@@ -60,6 +63,32 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const config = await window.setu.getConfig();
 
+      // In dev mode, add local development options and custom URL to the dropdown
+      if (config.isDev) {
+        const appSelect = document.getElementById('app-select');
+        if (appSelect) {
+          // Add dev options before existing production options
+          const devOptions = [
+            { value: 'http://localhost:8000', app: 'nexinvo', label: 'NexInvo (Local Dev)' },
+            { value: 'http://localhost:8000', app: 'nexinvo-plus', label: 'NexInvo+ (Local Dev)' },
+          ];
+          const firstProdOption = appSelect.querySelector('option[value]:not([disabled])');
+          devOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.dataset.app = opt.app;
+            option.textContent = opt.label;
+            appSelect.insertBefore(option, firstProdOption);
+          });
+          // Add custom URL option at the end
+          const customOption = document.createElement('option');
+          customOption.value = 'custom';
+          customOption.dataset.app = 'custom';
+          customOption.textContent = 'Custom URL';
+          appSelect.appendChild(customOption);
+        }
+      }
+
       // Check if already logged in AND has valid token
       if (config.serverUrl && config.authToken) {
         // Get actual connection status
@@ -67,8 +96,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showDashboard();
         // If we have valid credentials, consider server as connected
-        // (the auth token is valid, so we're connected to NexInvo)
         updateServerStatus(true);
+
+        // Update app name in UI based on saved appType
+        currentAppType = config.appType || 'nexinvo';
+        updateAppNameUI(currentAppType);
 
         // Populate user email from saved config
         if (config.userEmail) {
@@ -131,6 +163,10 @@ document.addEventListener('DOMContentLoaded', () => {
           customUrlInput.required = false;
           serverUrlInput.value = appSelect.value;
         }
+        // Update login page app name based on dropdown selection
+        const selectedOption = appSelect.options[appSelect.selectedIndex];
+        const selectedAppType = selectedOption?.dataset?.app || 'nexinvo';
+        updateAppNameUI(selectedAppType);
       });
     }
 
@@ -404,12 +440,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Helper to get display name for an app type
+  function getAppDisplayName(appType) {
+    return appType === 'nexinvo-plus' ? 'NexInvo+' : 'NexInvo';
+  }
+
+  // Update all UI elements that show the connected app name
+  function updateAppNameUI(appType) {
+    const displayName = getAppDisplayName(appType);
+    const sidebarAppName = document.getElementById('sidebar-app-name');
+    const serverConnName = document.getElementById('server-conn-name');
+    if (sidebarAppName) sidebarAppName.textContent = displayName;
+    if (serverConnName) serverConnName.textContent = `${displayName} Server`;
+    // Update all dynamic app-name spans throughout the UI
+    document.querySelectorAll('.app-name').forEach(el => {
+      el.textContent = displayName;
+    });
+    // Update page title
+    document.title = `Setu - ${displayName} Tally Connector`;
+  }
+
   async function handleLogin(e) {
     e.preventDefault();
 
     const serverUrl = document.getElementById('server-url').value.trim();
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
+
+    // Determine app type from dropdown selection
+    const appSelect = document.getElementById('app-select');
+    const selectedOption = appSelect.options[appSelect.selectedIndex];
+    const appType = selectedOption?.dataset?.app || 'nexinvo';
 
     // Show loading
     loginBtn.disabled = true;
@@ -418,18 +479,21 @@ document.addEventListener('DOMContentLoaded', () => {
     loginError.classList.add('hidden');
 
     try {
-      const result = await window.setu.login({ serverUrl, email, password });
+      const result = await window.setu.login({ serverUrl, email, password, appType });
 
       if (result.success) {
         showDashboard();
         // Update server status to connected immediately after successful login
         updateServerStatus(true);
+        // Update app name throughout UI
+        currentAppType = appType;
+        updateAppNameUI(appType);
         // Update email in multiple places
         const userEmailEl = document.getElementById('user-email');
         const settingsUserEmail = document.getElementById('settings-user-email');
         if (userEmailEl) userEmailEl.textContent = email;
         if (settingsUserEmail) settingsUserEmail.textContent = email;
-        showToast('Connected to NexInvo', 'success');
+        showToast(`Connected to ${getAppDisplayName(appType)}`, 'success');
 
         // Check Tally connection
         checkTallyConnection();
@@ -1328,11 +1392,11 @@ document.addEventListener('DOMContentLoaded', () => {
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
-            <span>Company details synced to NexInvo successfully!</span>
+            <span>Company details synced to ${getAppDisplayName(currentAppType)} successfully!</span>
           </div>
         `;
         resultDiv.classList.remove('hidden');
-        showToast('Company details synced to NexInvo', 'success');
+        showToast(`Company details synced to ${getAppDisplayName(currentAppType)}`, 'success');
       } else {
         resultDiv.innerHTML = `
           <div class="result-error">
@@ -1356,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <path d="M5 12h14"/>
           <path d="M12 5l7 7-7 7"/>
         </svg>
-        Sync to NexInvo
+        Sync to ${getAppDisplayName(currentAppType)}
       `;
     }
   }
@@ -1912,11 +1976,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const firstSyncNote = result.is_first_sync ? ' [First sync - Full FY]' : '';
 
         if (totalSynced > 0) {
-          addSyncLogEntry('success', `Synced ${result.to_tally_count || 0} to Tally, ${result.to_nexinvo_count || 0} to NexInvo${periodInfo}${firstSyncNote}`);
+          addSyncLogEntry('success', `Synced ${result.to_tally_count || 0} to Tally, ${result.to_nexinvo_count || 0} to ${getAppDisplayName(currentAppType)}${periodInfo}${firstSyncNote}`);
         } else {
           // Show detailed info when nothing synced
           const previewInfo = result.preview_to_tally !== undefined ?
-            ` (Found: ${result.preview_to_tally || 0} pending to Tally, ${result.preview_to_nexinvo || 0} pending to NexInvo, ${result.tally_vouchers_fetched || 0} from Tally)` : '';
+            ` (Found: ${result.preview_to_tally || 0} pending to Tally, ${result.preview_to_nexinvo || 0} pending to ${getAppDisplayName(currentAppType)}, ${result.tally_vouchers_fetched || 0} from Tally)` : '';
           const syncNote = (result.preview_to_tally === 0 && result.preview_to_nexinvo === 0 && result.matched_count === 0) ?
             ' - Note: Only sent/paid invoices are synced' : '';
           addSyncLogEntry('success', `Sync complete - ${result.matched_count || 0} matched${periodInfo}${firstSyncNote}${previewInfo}${syncNote}`);
@@ -1987,7 +2051,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (totalSynced > 0) {
           showToast(`Synced ${totalSynced} invoices${firstSyncNote}`, 'success');
-          addSyncLogEntry('success', `Synced ${result.to_tally_count || 0} to Tally, ${result.to_nexinvo_count || 0} to NexInvo${periodInfo}${firstSyncNote}`);
+          addSyncLogEntry('success', `Synced ${result.to_tally_count || 0} to Tally, ${result.to_nexinvo_count || 0} to ${getAppDisplayName(currentAppType)}${periodInfo}${firstSyncNote}`);
         } else {
           showToast(`All invoices already in sync${firstSyncNote}`, 'success');
           addSyncLogEntry('success', `All invoices in sync (${result.matched_count || 0} matched)${periodInfo}${firstSyncNote}`);

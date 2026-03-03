@@ -72,6 +72,7 @@ const store = new Store({
     organizationName: '',
     tallyHost: 'localhost',
     tallyPort: 9000,
+    appType: '',
     autoStart: true,
     minimizeToTray: true,
     lastSync: null
@@ -297,7 +298,9 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon);
-  tray.setToolTip('Setu - NexInvo Tally Connector');
+  const appType = store.get('appType');
+  const appLabel = appType === 'nexinvo-plus' ? 'NexInvo+' : 'NexInvo';
+  tray.setToolTip(`Setu - ${appLabel} Tally Connector`);
 
   updateTrayMenu();
 
@@ -339,9 +342,11 @@ function updateTrayMenu() {
   const serverStatus = connectionStatus.server ? 'Connected' : 'Disconnected';
   const tallyStatus = connectionStatus.tally ? 'Connected' : 'Disconnected';
 
+  const trayAppType = store.get('appType');
+  const trayAppLabel = trayAppType === 'nexinvo-plus' ? 'NexInvo+' : 'NexInvo';
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Setu - NexInvo Connector',
+      label: `Setu - ${trayAppLabel} Connector`,
       enabled: false,
       icon: createDefaultIcon()
     },
@@ -810,6 +815,8 @@ ipcMain.handle('get-config', () => {
   return {
     serverUrl: store.get('serverUrl'),
     authToken: store.get('authToken'),  // Include authToken so renderer can check login status
+    appType: store.get('appType') || 'nexinvo',
+    isDev: !app.isPackaged,
     tallyHost: store.get('tallyHost'),
     tallyPort: store.get('tallyPort'),
     autoStart: store.get('autoStart'),
@@ -835,7 +842,7 @@ ipcMain.handle('save-config', (event, config) => {
   return { success: true };
 });
 
-ipcMain.handle('login', async (event, { serverUrl, email, password }) => {
+ipcMain.handle('login', async (event, { serverUrl, email, password, appType }) => {
   try {
     const axios = require('axios');
     // Remove trailing slash from serverUrl to prevent double slashes
@@ -855,6 +862,7 @@ ipcMain.handle('login', async (event, { serverUrl, email, password }) => {
     store.set('serverUrl', cleanServerUrl);
     store.set('authToken', access);
     store.set('refreshToken', refresh);
+    store.set('appType', appType || 'nexinvo');
     store.set('user', { email }); // Store basic user info
 
     // Store organization ID for API calls that require it
@@ -864,7 +872,6 @@ ipcMain.handle('login', async (event, { serverUrl, email, password }) => {
     }
 
     // Set server as connected immediately after successful login
-    // (REST API login succeeded, so we're connected to NexInvo)
     connectionStatus.server = true;
     updateTrayIcon();
 
@@ -899,6 +906,7 @@ ipcMain.handle('logout', () => {
   store.delete('refreshToken');
   store.delete('user');
   store.delete('serverUrl');
+  store.delete('appType');
   store.delete('organizationId');
   store.delete('organizationName');
   store.delete('ledgerMappings');
