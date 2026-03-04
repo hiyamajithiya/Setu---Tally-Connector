@@ -333,6 +333,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('import-clients-btn')?.addEventListener('click', previewImportClients);
     document.getElementById('import-products-btn')?.addEventListener('click', previewImportProducts);
 
+    // Import - Chart of Accounts
+    document.getElementById('fetch-accounts-btn')?.addEventListener('click', fetchAccountsFromTally);
+    document.getElementById('import-accounts-btn')?.addEventListener('click', importAccountsToNexInvo);
+
+    // Import - Day Book / Vouchers
+    document.getElementById('fetch-vouchers-btn')?.addEventListener('click', fetchVouchersFromTally);
+    document.getElementById('import-vouchers-btn')?.addEventListener('click', importVouchersToNexInvo);
+
+    // Set default date range for voucher import (current FY)
+    setDefaultVoucherDateRange();
+
+    // Full Books Import
+    document.getElementById('full-import-btn')?.addEventListener('click', runFullBooksImport);
+
     // Real-Time Sync
     setupRealtimeSyncListeners();
   }
@@ -907,7 +921,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function populateLedgerDropdowns(ledgers) {
-    const selects = ['sales-ledger', 'cgst-ledger', 'sgst-ledger', 'igst-ledger', 'roundoff-ledger', 'discount-ledger'];
+    // All ledger selects (sales + purchase + bank/cash)
+    const ledgerSelects = [
+      'sales-ledger', 'cgst-ledger', 'sgst-ledger', 'igst-ledger', 'roundoff-ledger', 'discount-ledger',
+      'purchase-ledger', 'cgst-input-ledger', 'sgst-input-ledger', 'igst-input-ledger', 'discount-received-ledger',
+      'bank-ledger', 'cash-ledger'
+    ];
+
+    // Party group selects (populated from groups, not ledgers)
+    const groupSelects = ['debtor-party-group', 'creditor-party-group'];
 
     // Mapping from select ID to saved config key
     const selectToConfigKey = {
@@ -916,99 +938,168 @@ document.addEventListener('DOMContentLoaded', () => {
       'sgst-ledger': 'sgstLedger',
       'igst-ledger': 'igstLedger',
       'roundoff-ledger': 'roundOffLedger',
-      'discount-ledger': 'discountLedger'
+      'discount-ledger': 'discountLedger',
+      'purchase-ledger': 'purchaseLedger',
+      'cgst-input-ledger': 'cgstInputLedger',
+      'sgst-input-ledger': 'sgstInputLedger',
+      'igst-input-ledger': 'igstInputLedger',
+      'discount-received-ledger': 'discountReceivedLedger',
+      'bank-ledger': 'bankLedger',
+      'cash-ledger': 'cashLedger',
+      'debtor-party-group': 'defaultPartyGroup',
+      'creditor-party-group': 'creditorPartyGroup'
     };
 
-    // Auto-mapping patterns for each ledger type (used only if no saved mapping)
+    // Auto-mapping patterns for each ledger type
     const autoMapPatterns = {
+      // Sales-side
       'sales-ledger': ['sales', 'sale account', 'sales account', 'sales a/c', 'revenue', 'professional services', 'service charges', 'consulting'],
-      'cgst-ledger': ['cgst', 'central gst', 'output cgst', 'cgst output', 'cgst payable'],
-      'sgst-ledger': ['sgst', 'state gst', 'output sgst', 'sgst output', 'sgst payable'],
-      'igst-ledger': ['igst', 'integrated gst', 'output igst', 'igst output', 'igst payable'],
+      'cgst-ledger': ['output cgst', 'cgst output', 'cgst payable', 'cgst'],
+      'sgst-ledger': ['output sgst', 'sgst output', 'sgst payable', 'sgst'],
+      'igst-ledger': ['output igst', 'igst output', 'igst payable', 'igst'],
       'roundoff-ledger': ['round off', 'roundoff', 'rounding off', 'round-off'],
-      'discount-ledger': ['discount', 'discount allowed', 'sales discount', 'trade discount']
+      'discount-ledger': ['discount allowed', 'sales discount', 'trade discount', 'discount'],
+      // Purchase-side
+      'purchase-ledger': ['purchase', 'purchase account', 'purchases', 'purchase a/c'],
+      'cgst-input-ledger': ['input cgst', 'cgst input', 'cgst receivable', 'cgst credit'],
+      'sgst-input-ledger': ['input sgst', 'sgst input', 'sgst receivable', 'sgst credit'],
+      'igst-input-ledger': ['input igst', 'igst input', 'igst receivable', 'igst credit'],
+      'discount-received-ledger': ['discount received', 'purchase discount', 'discount on purchases'],
+      // Bank & Cash
+      'bank-ledger': ['bank', 'bank account', 'bank a/c'],
+      'cash-ledger': ['cash', 'cash-in-hand', 'cash account', 'cash a/c', 'petty cash']
     };
 
-    // Parent group fallback: if pattern match fails, match by parent group
+    // Parent group fallback
     const autoMapByGroup = {
       'sales-ledger': ['sales accounts', 'sales account'],
       'cgst-ledger': ['duties & taxes', 'duties and taxes'],
       'sgst-ledger': ['duties & taxes', 'duties and taxes'],
       'igst-ledger': ['duties & taxes', 'duties and taxes'],
       'roundoff-ledger': ['indirect expenses', 'indirect incomes'],
-      'discount-ledger': ['indirect expenses']
+      'discount-ledger': ['indirect expenses'],
+      'purchase-ledger': ['purchase accounts', 'purchase account'],
+      'cgst-input-ledger': ['duties & taxes', 'duties and taxes'],
+      'sgst-input-ledger': ['duties & taxes', 'duties and taxes'],
+      'igst-input-ledger': ['duties & taxes', 'duties and taxes'],
+      'discount-received-ledger': ['indirect incomes'],
+      'bank-ledger': ['bank accounts', 'bank account'],
+      'cash-ledger': ['cash-in-hand']
     };
 
-    // Try to load saved mappings
+    // Auto-mapping patterns for party groups
+    const groupAutoMap = {
+      'debtor-party-group': ['sundry debtors'],
+      'creditor-party-group': ['sundry creditors']
+    };
+
+    // Try to load saved mappings from backend
     let savedMappings = null;
     try {
-      const config = await window.setu.getConfig();
-      savedMappings = config.ledgerMappings;
+      const result = await window.setu.getLedgerMappings();
+      if (result.success && result.mappings) {
+        savedMappings = result.mappings;
+      }
     } catch (e) {
-      console.log('No saved ledger mappings found');
+      // Fallback to local config
+      try {
+        const config = await window.setu.getConfig();
+        savedMappings = config.ledgerMappings;
+      } catch (e2) {
+        console.log('No saved ledger mappings found');
+      }
     }
 
-    // Populate dropdowns
-    selects.forEach(selectId => {
+    // Extract unique parent groups from ledgers for party group dropdowns
+    const parentGroups = [...new Set(ledgers.map(l => l.group || l.parent || '').filter(Boolean))].sort();
+
+    // Populate party group dropdowns
+    groupSelects.forEach(selectId => {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      select.innerHTML = '<option value="">Select Group</option>';
+      parentGroups.forEach(group => {
+        const option = document.createElement('option');
+        option.value = group;
+        option.textContent = group;
+        select.appendChild(option);
+      });
+
+      // Try saved mapping first
+      const configKey = selectToConfigKey[selectId];
+      if (savedMappings && savedMappings[configKey]) {
+        select.value = savedMappings[configKey];
+        if (select.value) return;
+      }
+
+      // Auto-map party groups
+      const patterns = groupAutoMap[selectId] || [];
+      for (const pattern of patterns) {
+        const matched = parentGroups.find(g => g.toLowerCase() === pattern);
+        if (matched) { select.value = matched; break; }
+      }
+    });
+
+    // Helper to populate a ledger dropdown with smart grouping
+    function populateSelect(selectId, ledgerList) {
       const select = document.getElementById(selectId);
       if (!select) return;
 
-      // For the sales ledger, group Sales Accounts at top
-      select.innerHTML = '<option value="">Select Ledger</option>';
+      const isOptional = select.querySelector('option')?.textContent?.includes('Optional');
+      select.innerHTML = isOptional
+        ? '<option value="">Select Ledger (Optional)</option>'
+        : '<option value="">Select Ledger</option>';
 
-      if (selectId === 'sales-ledger') {
-        // Separate Sales Accounts ledgers from the rest
-        const salesLedgers = ledgers.filter(l =>
-          (l.group || l.parent || '').toLowerCase().includes('sales account')
-        );
-        const otherLedgers = ledgers.filter(l =>
-          !(l.group || l.parent || '').toLowerCase().includes('sales account')
-        );
+      // Group ledgers by parent group for better UX
+      const grouped = {};
+      ledgerList.forEach(l => {
+        const group = l.group || l.parent || 'Other';
+        if (!grouped[group]) grouped[group] = [];
+        grouped[group].push(l);
+      });
 
-        if (salesLedgers.length > 0) {
-          const salesGroup = document.createElement('optgroup');
-          salesGroup.label = `Sales Accounts (${salesLedgers.length} ledgers)`;
-          salesLedgers.forEach(ledger => {
+      // If few groups, use optgroups; otherwise flat list
+      const groupNames = Object.keys(grouped).sort();
+      if (groupNames.length > 1 && groupNames.length <= 20) {
+        groupNames.forEach(groupName => {
+          const optgroup = document.createElement('optgroup');
+          optgroup.label = `${groupName} (${grouped[groupName].length})`;
+          grouped[groupName].forEach(ledger => {
             const option = document.createElement('option');
             option.value = ledger.name;
             option.textContent = ledger.name;
-            salesGroup.appendChild(option);
+            optgroup.appendChild(option);
           });
-          select.appendChild(salesGroup);
-        }
-
-        if (otherLedgers.length > 0) {
-          const otherGroup = document.createElement('optgroup');
-          otherGroup.label = 'Other Ledgers';
-          otherLedgers.forEach(ledger => {
-            const option = document.createElement('option');
-            option.value = ledger.name;
-            option.textContent = `${ledger.name} (${ledger.group || ledger.parent || 'N/A'})`;
-            otherGroup.appendChild(option);
-          });
-          select.appendChild(otherGroup);
-        }
+          select.appendChild(optgroup);
+        });
       } else {
-        ledgers.forEach(ledger => {
+        ledgerList.forEach(ledger => {
           const option = document.createElement('option');
           option.value = ledger.name;
           option.textContent = `${ledger.name} (${ledger.group || ledger.parent || 'N/A'})`;
           select.appendChild(option);
         });
       }
+    }
 
-      // First priority: Use saved mapping if available
+    // Populate all ledger dropdowns
+    ledgerSelects.forEach(selectId => {
+      populateSelect(selectId, ledgers);
+
+      const select = document.getElementById(selectId);
+      if (!select) return;
+
+      // First priority: Use saved mapping
       const configKey = selectToConfigKey[selectId];
       if (savedMappings && savedMappings[configKey]) {
-        // Check if the saved ledger exists in current ledger list
         const savedLedgerExists = ledgers.some(l => l.name === savedMappings[configKey]);
         if (savedLedgerExists) {
           select.value = savedMappings[configKey];
-          return; // Skip auto-mapping for this select
+          return;
         }
       }
 
-      // Second priority: Auto-map based on name patterns
+      // Second priority: Auto-map by name patterns
       let mapped = false;
       const patterns = autoMapPatterns[selectId] || [];
       for (const pattern of patterns) {
@@ -1023,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Third priority: Auto-map by parent group (e.g. first ledger under "Sales Accounts")
+      // Third priority: Auto-map by parent group
       if (!mapped) {
         const groupPatterns = autoMapByGroup[selectId] || [];
         for (const groupPattern of groupPatterns) {
@@ -1039,11 +1130,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Show appropriate message
-    const mappedCount = selects.filter(id => document.getElementById(id)?.value).length;
+    const allSelects = [...ledgerSelects, ...groupSelects];
+    const mappedCount = allSelects.filter(id => document.getElementById(id)?.value).length;
     if (savedMappings) {
-      showToast(`Loaded saved mappings. ${mappedCount} ledgers mapped.`, 'success');
+      showToast(`Loaded saved mappings. ${mappedCount}/${allSelects.length} fields mapped.`, 'success');
     } else if (mappedCount > 0) {
-      showToast(`Auto-mapped ${mappedCount} ledgers. Save to remember your selection.`, 'info');
+      showToast(`Auto-mapped ${mappedCount} fields. Save to remember your selection.`, 'info');
     }
   }
 
@@ -1051,12 +1143,25 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
 
     const mappings = {
+      // Sales-side
       salesLedger: document.getElementById('sales-ledger').value,
       cgstLedger: document.getElementById('cgst-ledger').value,
       sgstLedger: document.getElementById('sgst-ledger').value,
       igstLedger: document.getElementById('igst-ledger').value,
       roundOffLedger: document.getElementById('roundoff-ledger').value,
-      discountLedger: document.getElementById('discount-ledger').value
+      discountLedger: document.getElementById('discount-ledger').value,
+      // Purchase-side
+      purchaseLedger: document.getElementById('purchase-ledger')?.value || '',
+      cgstInputLedger: document.getElementById('cgst-input-ledger')?.value || '',
+      sgstInputLedger: document.getElementById('sgst-input-ledger')?.value || '',
+      igstInputLedger: document.getElementById('igst-input-ledger')?.value || '',
+      discountReceivedLedger: document.getElementById('discount-received-ledger')?.value || '',
+      // Bank & Cash
+      bankLedger: document.getElementById('bank-ledger')?.value || '',
+      cashLedger: document.getElementById('cash-ledger')?.value || '',
+      // Party groups
+      defaultPartyGroup: document.getElementById('debtor-party-group')?.value || 'Sundry Debtors',
+      creditorPartyGroup: document.getElementById('creditor-party-group')?.value || 'Sundry Creditors'
     };
 
     try {
@@ -1691,6 +1796,576 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
+  // CHART OF ACCOUNTS IMPORT (Account Groups + Ledgers + Opening Balances)
+  // ==========================================
+
+  let fetchedAccountGroups = [];
+  let fetchedLedgers = [];
+
+  function setDefaultVoucherDateRange() {
+    const today = new Date();
+    // Financial year: April 1 to March 31
+    const fyStart = today.getMonth() >= 3
+      ? new Date(today.getFullYear(), 3, 1)
+      : new Date(today.getFullYear() - 1, 3, 1);
+    const fyEnd = today.getMonth() >= 3
+      ? new Date(today.getFullYear() + 1, 2, 31)
+      : new Date(today.getFullYear(), 2, 31);
+
+    const startInput = document.getElementById('voucher-start-date');
+    const endInput = document.getElementById('voucher-end-date');
+    if (startInput) startInput.value = fyStart.toISOString().split('T')[0];
+    if (endInput) endInput.value = fyEnd.toISOString().split('T')[0];
+  }
+
+  async function fetchAccountsFromTally() {
+    const btn = document.getElementById('fetch-accounts-btn');
+    const loading = document.getElementById('accounts-loading');
+    const preview = document.getElementById('accounts-preview');
+    const result = document.getElementById('accounts-result');
+
+    btn.disabled = true;
+    loading?.classList.remove('hidden');
+    preview?.classList.add('hidden');
+    result?.classList.add('hidden');
+    updateImportStep(2);
+
+    try {
+      // Fetch account groups and ledgers in parallel
+      const [groupsResult, ledgersResult] = await Promise.all([
+        window.setu.fetchAccountGroups(),
+        window.setu.fetchLedgersWithBalances()
+      ]);
+
+      if (!groupsResult.success) throw new Error(groupsResult.error || 'Failed to fetch account groups');
+      if (!ledgersResult.success) throw new Error(ledgersResult.error || 'Failed to fetch ledgers');
+
+      fetchedAccountGroups = groupsResult.groups || [];
+      fetchedLedgers = ledgersResult.ledgers || [];
+
+      const ledgersWithOb = fetchedLedgers.filter(l => parseFloat(l.opening_balance || 0) !== 0);
+
+      // Update summary cards
+      document.getElementById('groups-count').textContent = fetchedAccountGroups.length;
+      document.getElementById('ledgers-count').textContent = fetchedLedgers.length;
+      document.getElementById('ledgers-with-ob-count').textContent = ledgersWithOb.length;
+      document.getElementById('groups-badge').textContent = fetchedAccountGroups.length;
+      document.getElementById('ledgers-badge').textContent = fetchedLedgers.length;
+
+      // Populate groups table
+      const groupsBody = document.getElementById('groups-table-body');
+      groupsBody.innerHTML = fetchedAccountGroups.map(g => `
+        <tr>
+          <td>${escapeHtml(g.name)}</td>
+          <td>${escapeHtml(g.parent || '—')}</td>
+          <td>${g.is_revenue ? 'Revenue' : 'Non-Revenue'}</td>
+        </tr>
+      `).join('');
+
+      // Populate ledgers table
+      const ledgersBody = document.getElementById('ledgers-table-body');
+      ledgersBody.innerHTML = fetchedLedgers.map(l => {
+        const ob = parseFloat(l.opening_balance || 0);
+        const obType = l.opening_balance_type || 'Dr';
+        const obDisplay = ob !== 0
+          ? `<span class="balance-${obType.toLowerCase()}">${formatAmount(Math.abs(ob))} ${obType}</span>`
+          : '—';
+        return `
+          <tr>
+            <td>${escapeHtml(l.name)}</td>
+            <td>${escapeHtml(l.parent || '—')}</td>
+            <td>${obDisplay}</td>
+            <td>${obType}</td>
+          </tr>
+        `;
+      }).join('');
+
+      loading?.classList.add('hidden');
+      preview?.classList.remove('hidden');
+      updateImportStep(3);
+      showToast(`Fetched ${fetchedAccountGroups.length} groups and ${fetchedLedgers.length} ledgers from Tally`, 'success');
+
+    } catch (error) {
+      loading?.classList.add('hidden');
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function importAccountsToNexInvo() {
+    const btn = document.getElementById('import-accounts-btn');
+    const resultDiv = document.getElementById('accounts-result');
+    const displayName = getAppDisplayName(currentAppType);
+
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loader-small"></div> Importing...`;
+
+    try {
+      // Step 1: Import Account Groups
+      let groupsMsg = '';
+      if (fetchedAccountGroups.length > 0) {
+        const groupsResult = await window.setu.importAccountGroups(fetchedAccountGroups);
+        if (!groupsResult.success) throw new Error(groupsResult.error || 'Failed to import account groups');
+        groupsMsg = groupsResult.message || `Imported ${groupsResult.created_count || 0} groups`;
+      }
+
+      // Step 2: Import Ledger Accounts (with opening balances)
+      let ledgersMsg = '';
+      if (fetchedLedgers.length > 0) {
+        const ledgersResult = await window.setu.importLedgerAccounts(fetchedLedgers);
+        if (!ledgersResult.success) throw new Error(ledgersResult.error || 'Failed to import ledger accounts');
+        ledgersMsg = ledgersResult.message || `Imported ${ledgersResult.created_count || 0} ledgers`;
+      }
+
+      resultDiv.innerHTML = `
+        <div class="result-success">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <div>
+            <strong>Import Successful!</strong>
+            <p>${escapeHtml(groupsMsg)}</p>
+            <p>${escapeHtml(ledgersMsg)}</p>
+          </div>
+        </div>
+      `;
+      resultDiv.classList.remove('hidden');
+      showToast(`Chart of Accounts imported to ${displayName}`, 'success');
+
+    } catch (error) {
+      resultDiv.innerHTML = `
+        <div class="result-error">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          <div>
+            <strong>Import Failed</strong>
+            <p>${escapeHtml(error.message)}</p>
+          </div>
+        </div>
+      `;
+      resultDiv.classList.remove('hidden');
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14"/>
+          <path d="M12 5l7 7-7 7"/>
+        </svg>
+        Import Chart of Accounts to <span class="app-name">${displayName}</span>
+      `;
+    }
+  }
+
+  // ==========================================
+  // DAY BOOK / VOUCHERS IMPORT
+  // ==========================================
+
+  let fetchedVouchers = [];
+  let vouchersPreviewData = null;
+
+  async function fetchVouchersFromTally() {
+    const btn = document.getElementById('fetch-vouchers-btn');
+    const loading = document.getElementById('vouchers-loading');
+    const preview = document.getElementById('vouchers-preview');
+    const result = document.getElementById('vouchers-result');
+
+    const startDate = document.getElementById('voucher-start-date')?.value;
+    const endDate = document.getElementById('voucher-end-date')?.value;
+
+    if (!startDate || !endDate) {
+      showToast('Please select a date range', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    loading?.classList.remove('hidden');
+    preview?.classList.add('hidden');
+    result?.classList.add('hidden');
+    updateImportStep(2);
+
+    try {
+      // Fetch vouchers from Tally
+      const vResult = await window.setu.fetchAllVouchers({ startDate, endDate });
+      if (!vResult.success) throw new Error(vResult.error || 'Failed to fetch vouchers');
+
+      fetchedVouchers = vResult.vouchers || [];
+
+      // Preview via backend
+      const previewResult = await window.setu.previewImportVouchers({
+        vouchers: fetchedVouchers,
+        voucher_types: ['Sales', 'Purchase', 'Receipt', 'Payment', 'Contra', 'Journal', 'Debit Note', 'Credit Note', 'Stock Journal', 'Delivery Note', 'Receipt Note', 'Physical Stock', 'Rejections In', 'Rejections Out', 'Manufacturing Journal']
+      });
+
+      if (!previewResult.success) throw new Error(previewResult.error || 'Failed to preview vouchers');
+
+      vouchersPreviewData = previewResult;
+
+      // Update summary
+      document.getElementById('vouchers-total-count').textContent = fetchedVouchers.length;
+      document.getElementById('vouchers-new-count').textContent = previewResult.total_to_create || 0;
+      document.getElementById('vouchers-duplicate-count').textContent = previewResult.total_duplicates || 0;
+      document.getElementById('vouchers-missing-ledgers-count').textContent = previewResult.total_missing_ledgers || 0;
+
+      // Voucher type chips
+      const chipsContainer = document.getElementById('voucher-type-chips');
+      const counts = previewResult.counts_by_type || {};
+      chipsContainer.innerHTML = Object.entries(counts).map(([type, count]) =>
+        `<span class="voucher-type-chip">${escapeHtml(type)} <span class="chip-count">${count}</span></span>`
+      ).join('');
+
+      // Missing ledgers
+      const missingSection = document.getElementById('vouchers-missing-ledgers-section');
+      const missingLedgers = previewResult.missing_ledgers || [];
+      if (missingLedgers.length > 0) {
+        const missingList = document.getElementById('missing-ledgers-list');
+        missingList.innerHTML = missingLedgers.map(name =>
+          `<span class="missing-ledger-tag">${escapeHtml(name)}</span>`
+        ).join('');
+        missingSection?.classList.remove('hidden');
+      } else {
+        missingSection?.classList.add('hidden');
+      }
+
+      loading?.classList.add('hidden');
+      preview?.classList.remove('hidden');
+      updateImportStep(3);
+      showToast(`Fetched ${fetchedVouchers.length} vouchers from Tally`, 'success');
+
+    } catch (error) {
+      loading?.classList.add('hidden');
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function importVouchersToNexInvo() {
+    const btn = document.getElementById('import-vouchers-btn');
+    const resultDiv = document.getElementById('vouchers-result');
+    const displayName = getAppDisplayName(currentAppType);
+    const autoCreate = document.getElementById('auto-create-ledgers')?.checked || false;
+
+    if (!vouchersPreviewData || !vouchersPreviewData.to_create || vouchersPreviewData.to_create.length === 0) {
+      showToast('No new vouchers to import', 'warning');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loader-small"></div> Importing ${vouchersPreviewData.to_create.length} vouchers...`;
+
+    try {
+      const importResult = await window.setu.importVouchers({
+        vouchers: vouchersPreviewData.to_create,
+        auto_create_ledgers: autoCreate
+      });
+
+      if (!importResult.success) throw new Error(importResult.error || 'Failed to import vouchers');
+
+      const ledgersCreatedMsg = importResult.ledgers_created?.length > 0
+        ? `<p>${importResult.ledgers_created.length} missing ledger(s) auto-created</p>`
+        : '';
+      const errorsMsg = importResult.errors?.length > 0
+        ? `<p class="text-warning">${importResult.errors.length} warning(s)</p>`
+        : '';
+
+      resultDiv.innerHTML = `
+        <div class="result-success">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <div>
+            <strong>Voucher Import Successful!</strong>
+            <p>${importResult.message || `Imported ${importResult.created_count || 0} voucher(s)`}</p>
+            ${ledgersCreatedMsg}
+            ${errorsMsg}
+          </div>
+        </div>
+      `;
+      resultDiv.classList.remove('hidden');
+      showToast(`Vouchers imported to ${displayName}`, 'success');
+
+    } catch (error) {
+      resultDiv.innerHTML = `
+        <div class="result-error">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          <div>
+            <strong>Import Failed</strong>
+            <p>${escapeHtml(error.message)}</p>
+          </div>
+        </div>
+      `;
+      resultDiv.classList.remove('hidden');
+      showToast(`Error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14"/>
+          <path d="M12 5l7 7-7 7"/>
+        </svg>
+        Import Vouchers to <span class="app-name">${displayName}</span>
+      `;
+    }
+  }
+
+  function formatAmount(num) {
+    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  }
+
+  // ==========================================
+  // FULL BOOKS IMPORT (All-in-one)
+  // ==========================================
+
+  async function runFullBooksImport() {
+    const displayName = getAppDisplayName(currentAppType);
+
+    // Get date range for vouchers
+    const startDate = document.getElementById('voucher-start-date')?.value;
+    const endDate = document.getElementById('voucher-end-date')?.value;
+
+    // Create progress modal
+    const overlay = document.createElement('div');
+    overlay.className = 'full-import-progress';
+    overlay.innerHTML = `
+      <div class="full-import-card">
+        <h3>Full Books Import &mdash; Tally to ${escapeHtml(displayName)}</h3>
+        <div class="full-import-step" id="fis-company">
+          <div class="step-status-icon pending" id="fis-company-icon">1</div>
+          <div>
+            <div class="step-text">Fetch & Import Company Master</div>
+            <div class="step-detail" id="fis-company-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="full-import-step" id="fis-clients">
+          <div class="step-status-icon pending" id="fis-clients-icon">2</div>
+          <div>
+            <div class="step-text">Fetch & Import Clients / Parties</div>
+            <div class="step-detail" id="fis-clients-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="full-import-step" id="fis-stock">
+          <div class="step-status-icon pending" id="fis-stock-icon">3</div>
+          <div>
+            <div class="step-text">Fetch & Import Stock Items / Products</div>
+            <div class="step-detail" id="fis-stock-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="full-import-step" id="fis-groups">
+          <div class="step-status-icon pending" id="fis-groups-icon">4</div>
+          <div>
+            <div class="step-text">Fetch & Import Account Groups</div>
+            <div class="step-detail" id="fis-groups-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="full-import-step" id="fis-ledgers">
+          <div class="step-status-icon pending" id="fis-ledgers-icon">5</div>
+          <div>
+            <div class="step-text">Fetch & Import Ledger Accounts with Opening Balances</div>
+            <div class="step-detail" id="fis-ledgers-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="full-import-step" id="fis-vouchers">
+          <div class="step-status-icon pending" id="fis-vouchers-icon">6</div>
+          <div>
+            <div class="step-text">Fetch & Import All Vouchers</div>
+            <div class="step-detail" id="fis-vouchers-detail">${startDate && endDate ? `${startDate} to ${endDate}` : 'No date range set — will use current FY'}</div>
+          </div>
+        </div>
+        <div style="margin-top: 20px; text-align: right;">
+          <button class="btn btn-secondary" id="fis-close-btn" style="display: none;">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const btn = document.getElementById('full-import-btn');
+    btn.disabled = true;
+
+    function updateStep(step, status, detail) {
+      const icon = document.getElementById(`fis-${step}-icon`);
+      const detailEl = document.getElementById(`fis-${step}-detail`);
+      if (icon) {
+        icon.className = `step-status-icon ${status}`;
+        icon.textContent = status === 'done' ? '✓' : status === 'error' ? '✗' : status === 'running' ? '⟳' : icon.textContent;
+      }
+      if (detailEl && detail) detailEl.textContent = detail;
+    }
+
+    try {
+      // Step 1: Fetch & Import Company Master
+      updateStep('company', 'running', 'Fetching company details from Tally...');
+      const companyResult = await window.setu.fetchCompanyDetails();
+
+      if (companyResult.success && companyResult.companyDetails) {
+        const c = companyResult.companyDetails;
+        updateStep('company', 'running', `Found: ${c.companyName || 'Unknown'}. Syncing...`);
+
+        const syncResult = await window.setu.syncCompanyToNexInvo(c);
+        if (syncResult.success) {
+          updateStep('company', 'done', `Synced: ${c.companyName || 'Company'} — ${syncResult.message || 'OK'}`);
+        } else {
+          updateStep('company', 'done', `Fetched but sync skipped: ${syncResult.error || 'Unknown error'}`);
+        }
+      } else {
+        updateStep('company', 'done', 'No company details found — skipping');
+      }
+
+      // Step 2: Fetch & Import Clients / Parties
+      updateStep('clients', 'running', 'Fetching parties from Tally...');
+      try {
+        const partiesResult = await window.setu.fetchParties();
+        if (partiesResult.success && partiesResult.parties && partiesResult.parties.length > 0) {
+          const parties = partiesResult.parties;
+          updateStep('clients', 'running', `Fetched ${parties.length} parties. Importing...`);
+          const importClientsResult = await window.setu.importClients(parties);
+          if (importClientsResult.success) {
+            updateStep('clients', 'done', importClientsResult.message || `${importClientsResult.created || 0} created, ${importClientsResult.updated || 0} updated`);
+          } else {
+            updateStep('clients', 'done', `Import issue: ${importClientsResult.error || 'Unknown'}`);
+          }
+        } else {
+          updateStep('clients', 'done', 'No parties found in Tally');
+        }
+      } catch (clientErr) {
+        updateStep('clients', 'done', `Skipped: ${clientErr.message}`);
+      }
+
+      // Step 3: Fetch & Import Stock Items / Products
+      updateStep('stock', 'running', 'Fetching stock items from Tally...');
+      try {
+        const stockResult = await window.setu.fetchStockItems();
+        if (stockResult.success && stockResult.stockItems && stockResult.stockItems.length > 0) {
+          const items = stockResult.stockItems;
+          updateStep('stock', 'running', `Fetched ${items.length} stock items. Importing...`);
+          const importStockResult = await window.setu.importProducts(items);
+          if (importStockResult.success) {
+            updateStep('stock', 'done', importStockResult.message || `${importStockResult.created || 0} created, ${importStockResult.updated || 0} updated`);
+          } else {
+            updateStep('stock', 'done', `Import issue: ${importStockResult.error || 'Unknown'}`);
+          }
+        } else {
+          // Try services if no stock items
+          const serviceResult = await window.setu.fetchServiceLedgers();
+          if (serviceResult.success && serviceResult.serviceLedgers && serviceResult.serviceLedgers.length > 0) {
+            updateStep('stock', 'running', `Found ${serviceResult.serviceLedgers.length} services. Importing...`);
+            const importSvcResult = await window.setu.importServices(serviceResult.serviceLedgers);
+            if (importSvcResult.success) {
+              updateStep('stock', 'done', importSvcResult.message || `${importSvcResult.created || 0} services imported`);
+            } else {
+              updateStep('stock', 'done', `Import issue: ${importSvcResult.error || 'Unknown'}`);
+            }
+          } else {
+            updateStep('stock', 'done', 'No stock items or services found');
+          }
+        }
+      } catch (stockErr) {
+        updateStep('stock', 'done', `Skipped: ${stockErr.message}`);
+      }
+
+      // Step 4: Fetch & Import Account Groups
+      updateStep('groups', 'running', 'Fetching account groups from Tally...');
+      const groupsResult = await window.setu.fetchAccountGroups();
+      if (!groupsResult.success) throw new Error(`Account Groups: ${groupsResult.error}`);
+
+      const groups = groupsResult.groups || [];
+      updateStep('groups', 'running', `Fetched ${groups.length} groups. Importing...`);
+
+      if (groups.length > 0) {
+        const importGroupsResult = await window.setu.importAccountGroups(groups);
+        if (!importGroupsResult.success) throw new Error(`Import Groups: ${importGroupsResult.error}`);
+        updateStep('groups', 'done', importGroupsResult.message || `${importGroupsResult.created_count || 0} created`);
+      } else {
+        updateStep('groups', 'done', 'No groups found');
+      }
+
+      // Step 2: Fetch & Import Ledger Accounts
+      updateStep('ledgers', 'running', 'Fetching ledger accounts from Tally...');
+      const ledgersResult = await window.setu.fetchLedgersWithBalances();
+      if (!ledgersResult.success) throw new Error(`Ledgers: ${ledgersResult.error}`);
+
+      const ledgers = ledgersResult.ledgers || [];
+      updateStep('ledgers', 'running', `Fetched ${ledgers.length} ledgers. Importing...`);
+
+      if (ledgers.length > 0) {
+        const importLedgersResult = await window.setu.importLedgerAccounts(ledgers);
+        if (!importLedgersResult.success) throw new Error(`Import Ledgers: ${importLedgersResult.error}`);
+        updateStep('ledgers', 'done', importLedgersResult.message || `${importLedgersResult.created_count || 0} created`);
+      } else {
+        updateStep('ledgers', 'done', 'No ledgers found');
+      }
+
+      // Step 3: Fetch & Import Vouchers
+      const sd = startDate || document.getElementById('voucher-start-date')?.value;
+      const ed = endDate || document.getElementById('voucher-end-date')?.value;
+
+      if (sd && ed) {
+        updateStep('vouchers', 'running', `Fetching vouchers from ${sd} to ${ed}...`);
+        const vResult = await window.setu.fetchAllVouchers({ startDate: sd, endDate: ed });
+        if (!vResult.success) throw new Error(`Vouchers: ${vResult.error}`);
+
+        const vouchers = vResult.vouchers || [];
+        updateStep('vouchers', 'running', `Fetched ${vouchers.length} vouchers. Previewing...`);
+
+        if (vouchers.length > 0) {
+          // Preview to filter duplicates
+          const previewResult = await window.setu.previewImportVouchers({
+            vouchers: vouchers,
+            voucher_types: ['Sales', 'Purchase', 'Receipt', 'Payment', 'Contra', 'Journal', 'Debit Note', 'Credit Note', 'Stock Journal', 'Delivery Note', 'Receipt Note', 'Physical Stock', 'Rejections In', 'Rejections Out', 'Manufacturing Journal']
+          });
+
+          if (previewResult.success && previewResult.to_create?.length > 0) {
+            updateStep('vouchers', 'running', `Importing ${previewResult.to_create.length} new vouchers (skipping ${previewResult.total_duplicates || 0} duplicates)...`);
+            const importVResult = await window.setu.importVouchers({
+              vouchers: previewResult.to_create,
+              auto_create_ledgers: true
+            });
+            if (!importVResult.success) throw new Error(`Import Vouchers: ${importVResult.error}`);
+            const ledgersCreated = importVResult.ledgers_created?.length || 0;
+            const extra = ledgersCreated > 0 ? ` (${ledgersCreated} ledgers auto-created)` : '';
+            updateStep('vouchers', 'done', `${importVResult.created_count || 0} imported, ${previewResult.total_duplicates || 0} duplicates skipped${extra}`);
+          } else {
+            updateStep('vouchers', 'done', `${vouchers.length} vouchers found, all already imported (duplicates)`);
+          }
+        } else {
+          updateStep('vouchers', 'done', 'No vouchers found for this date range');
+        }
+      } else {
+        updateStep('vouchers', 'done', 'Skipped — no date range selected');
+      }
+
+      showToast(`Full Books Import to ${displayName} completed!`, 'success');
+
+    } catch (error) {
+      // Mark current step as error
+      ['company', 'clients', 'stock', 'groups', 'ledgers', 'vouchers'].forEach(step => {
+        const icon = document.getElementById(`fis-${step}-icon`);
+        if (icon && icon.classList.contains('running')) {
+          updateStep(step, 'error', error.message);
+        }
+      });
+      showToast(`Import error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      const closeBtn = document.getElementById('fis-close-btn');
+      if (closeBtn) {
+        closeBtn.style.display = 'inline-block';
+        closeBtn.addEventListener('click', () => overlay.remove());
+      }
+    }
+  }
+
+  // ==========================================
   // IMPORT PREVIEW MODAL
   // ==========================================
 
@@ -1834,6 +2509,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       autoSyncIntervalMinutes = 15; // Default to 15 minutes
     }
+
+    // Save auto sync config (sync mode + voucher types)
+    const autoSyncMode = document.querySelector('input[name="auto-sync-mode"]:checked')?.value || 'invoices';
+    const autoVoucherTypes = autoSyncMode === 'vouchers' ? getSelectedVoucherTypes('auto-voucher-type-filter') : [];
+    window.setu.saveAutoSyncConfig({ syncMode: autoSyncMode, voucherTypes: autoVoucherTypes });
 
     autoSyncEnabled = true;
 
@@ -2082,6 +2762,38 @@ document.addEventListener('DOMContentLoaded', () => {
   // MANUAL SYNC WITH PREVIEW
   // ==========================================
 
+  // Load saved auto-sync config and apply to UI
+  async function loadAutoSyncConfig() {
+    try {
+      const result = await window.setu.getAutoSyncConfig();
+      if (result.success && result.config) {
+        const { syncMode, voucherTypes } = result.config;
+
+        // Set auto sync mode radio
+        if (syncMode) {
+          const radio = document.querySelector(`input[name="auto-sync-mode"][value="${syncMode}"]`);
+          if (radio) radio.checked = true;
+        }
+
+        // Show/hide voucher type filter
+        const filter = document.getElementById('auto-voucher-type-filter');
+        if (syncMode === 'vouchers') {
+          filter?.classList.remove('hidden');
+          // Set voucher type checkboxes
+          if (voucherTypes && voucherTypes.length > 0) {
+            document.querySelectorAll('#auto-voucher-type-filter .voucher-type-grid input[type="checkbox"]').forEach(cb => {
+              cb.checked = voucherTypes.includes(cb.value);
+            });
+          }
+        } else {
+          filter?.classList.add('hidden');
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load auto sync config:', err);
+    }
+  }
+
   // Store preview data for use in sync execution
   let manualSyncPreviewData = {
     toTally: [],
@@ -2091,8 +2803,80 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedToNexinvo: new Set()
   };
 
+  // Helper: get current manual sync mode
+  function getManualSyncMode() {
+    return document.querySelector('input[name="manual-sync-mode"]:checked')?.value || 'invoices';
+  }
+
+  // Helper: get selected voucher types from a filter container
+  function getSelectedVoucherTypes(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.voucher-type-grid input[type="checkbox"]:checked')).map(cb => cb.value);
+  }
+
+  // Helper: render voucher type badge
+  function renderVoucherTypeBadge(voucherType) {
+    if (!voucherType) return '';
+    const typeKey = voucherType.toLowerCase().replace(/\s+/g, '');
+    const classMap = {
+      'sales': 'vtype-sales', 'purchase': 'vtype-purchase', 'receipt': 'vtype-receipt',
+      'payment': 'vtype-payment', 'contra': 'vtype-contra', 'journal': 'vtype-journal',
+      'debitnote': 'vtype-debitnote', 'creditnote': 'vtype-creditnote',
+      'stockjournal': 'vtype-stock', 'deliverynote': 'vtype-stock', 'receiptnote': 'vtype-stock'
+    };
+    const cls = classMap[typeKey] || 'vtype-sales';
+    return `<span class="vtype-badge ${cls}">${escapeHtml(voucherType)}</span>`;
+  }
+
   function setupManualSyncListeners() {
     console.log('[ManualSync] Setting up manual sync listeners...');
+
+    // Sync Mode Toggle — show/hide voucher type filter
+    document.querySelectorAll('input[name="manual-sync-mode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const filter = document.getElementById('manual-voucher-type-filter');
+        const btnText = document.getElementById('fetch-sync-btn-text');
+        if (e.target.value === 'vouchers') {
+          filter?.classList.remove('hidden');
+          if (btnText) btnText.textContent = 'Fetch & Compare Vouchers';
+        } else {
+          filter?.classList.add('hidden');
+          if (btnText) btnText.textContent = 'Fetch & Compare Invoices';
+        }
+      });
+    });
+
+    // Manual Voucher Type Select All / Deselect All
+    document.getElementById('manual-select-all-types')?.addEventListener('click', () => {
+      document.querySelectorAll('#manual-voucher-type-filter .voucher-type-grid input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+    });
+    document.getElementById('manual-deselect-all-types')?.addEventListener('click', () => {
+      document.querySelectorAll('#manual-voucher-type-filter .voucher-type-grid input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+    });
+
+    // Auto Sync Mode Toggle
+    document.querySelectorAll('input[name="auto-sync-mode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const filter = document.getElementById('auto-voucher-type-filter');
+        if (e.target.value === 'vouchers') {
+          filter?.classList.remove('hidden');
+        } else {
+          filter?.classList.add('hidden');
+        }
+      });
+    });
+
+    // Auto Voucher Type Select All / Deselect All
+    document.getElementById('auto-select-all-types')?.addEventListener('click', () => {
+      document.querySelectorAll('#auto-voucher-type-filter .voucher-type-grid input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+    });
+    document.getElementById('auto-deselect-all-types')?.addEventListener('click', () => {
+      document.querySelectorAll('#auto-voucher-type-filter .voucher-type-grid input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+    });
+
+    // Load saved auto-sync config
+    loadAutoSyncConfig();
 
     // Fetch & Compare button
     const fetchBtn = document.getElementById('fetch-sync-preview-btn');
@@ -2182,8 +2966,10 @@ document.addEventListener('DOMContentLoaded', () => {
     results?.classList.add('hidden');
 
     try {
-      console.log('[ManualSync] Calling window.setu.getManualSyncPreview...');
-      const result = await window.setu.getManualSyncPreview({ startDate, endDate });
+      const syncMode = getManualSyncMode();
+      const voucherTypes = syncMode === 'vouchers' ? getSelectedVoucherTypes('manual-voucher-type-filter') : [];
+      console.log(`[ManualSync] Calling window.setu.getManualSyncPreview... syncMode=${syncMode}`);
+      const result = await window.setu.getManualSyncPreview({ startDate, endDate, syncMode, voucherTypes });
       console.log('[ManualSync] Result received:', result);
 
       if (result.success) {
@@ -2230,12 +3016,13 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       if (fetchBtn) {
         fetchBtn.disabled = false;
+        const label = getManualSyncMode() === 'vouchers' ? 'Fetch & Compare Vouchers' : 'Fetch & Compare Invoices';
         fetchBtn.innerHTML = `
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"/>
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          Fetch & Compare Invoices
+          <span id="fetch-sync-btn-text">${label}</span>
         `;
       }
     }
@@ -2245,8 +3032,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById(`${type}-list`);
     if (!container) return;
 
+    const isVoucherMode = getManualSyncMode() === 'vouchers';
+    const emptyLabel = isVoucherMode ? 'No vouchers to sync' : 'No invoices to sync';
+
     if (!invoices || invoices.length === 0) {
-      container.innerHTML = '<p class="empty-state">No invoices to sync</p>';
+      container.innerHTML = `<p class="empty-state">${emptyLabel}</p>`;
       return;
     }
 
@@ -2254,11 +3044,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.innerHTML = invoices.map((inv, index) => {
       const id = type === 'to-tally' ? inv.id : (inv.voucher_number || inv.id || index);
-      const invoiceNumber = type === 'to-tally' ? inv.invoice_number : (inv.voucher_number || inv.invoice_number || 'N/A');
+      const invoiceNumber = type === 'to-tally'
+        ? (inv.voucher_number || inv.invoice_number)
+        : (inv.voucher_number || inv.invoice_number || 'N/A');
       const date = inv.invoice_date || inv.date || inv.voucher_date || '';
-      const clientName = type === 'to-tally' ? (inv.client_name || inv.client?.name || 'Unknown') : (inv.party_name || inv.client_name || 'Unknown');
+      const clientName = type === 'to-tally'
+        ? (inv.party_name || inv.client_name || inv.client?.name || 'Unknown')
+        : (inv.party_name || inv.client_name || 'Unknown');
       const amount = parseFloat(inv.total_amount || inv.total || inv.amount || 0).toFixed(2);
       const isChecked = selectedSet.has(id);
+      const voucherType = inv.voucher_type_display || inv.voucher_type || inv.type || '';
+      const typeBadge = isVoucherMode && voucherType ? renderVoucherTypeBadge(voucherType) : '';
 
       return `
         <label class="sync-item ${isChecked ? 'selected' : ''}">
@@ -2266,6 +3062,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="checkmark"></span>
           <div class="sync-item-content">
             <div class="sync-item-header">
+              ${typeBadge}
               <span class="invoice-number">${escapeHtml(invoiceNumber)}</span>
               <span class="invoice-amount">₹${amount}</span>
             </div>
@@ -2306,8 +3103,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('matched-list');
     if (!container) return;
 
+    const isVoucherMode = getManualSyncMode() === 'vouchers';
+    const emptyLabel = isVoucherMode ? 'No matched vouchers' : 'No matched invoices';
+
     if (!invoices || invoices.length === 0) {
-      container.innerHTML = '<p class="empty-state">No matched invoices</p>';
+      container.innerHTML = `<p class="empty-state">${emptyLabel}</p>`;
       return;
     }
 
@@ -2316,6 +3116,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const date = inv.invoice_date || inv.date || inv.voucher_date || '';
       const clientName = inv.client_name || inv.party_name || 'Unknown';
       const amount = parseFloat(inv.total_amount || inv.total || inv.amount || 0).toFixed(2);
+      const voucherType = inv.voucher_type_display || inv.voucher_type || inv.type || '';
+      const typeBadge = isVoucherMode && voucherType ? renderVoucherTypeBadge(voucherType) : '';
 
       return `
         <div class="sync-item matched-item">
@@ -2326,6 +3128,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="sync-item-content">
             <div class="sync-item-header">
+              ${typeBadge}
               <span class="invoice-number">${escapeHtml(invoiceNumber)}</span>
               <span class="invoice-amount">₹${amount}</span>
             </div>
@@ -2430,9 +3233,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (progressText) progressText.textContent = `${progress}%`;
       }, 300);
 
+      const syncMode = getManualSyncMode();
+      // In vouchers mode, send full voucher objects for to_tally (needed for XML generation)
+      const toTallyVouchers = syncMode === 'vouchers'
+        ? selectedToTallyIds.map(id => manualSyncPreviewData.toTally.find(v => v.id === id)).filter(Boolean)
+        : [];
       const result = await window.setu.executeManualSync({
         toTallyIds: selectedToTallyIds,
-        toNexinvoVouchers: selectedToNexinvoVouchers
+        toTallyVouchers,
+        toNexinvoVouchers: selectedToNexinvoVouchers,
+        syncMode
       });
 
       clearInterval(progressInterval);

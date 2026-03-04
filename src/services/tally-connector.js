@@ -1351,6 +1351,651 @@ class TallyConnector {
     logger.info(`Parsed ${vouchers.length} sales vouchers from Tally`);
     return vouchers;
   }
+
+  /**
+   * Get all Account Groups (hierarchy) from Tally
+   */
+  async getAccountGroups() {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>AllGroups</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="AllGroups">
+            <TYPE>Group</TYPE>
+            <FETCH>NAME, PARENT, ISREVENUE, ISDEEMEDPOSITIVE, BASICGROUPISCALCULABLE</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+    try {
+      const response = await this.sendRequest(xml);
+      return await this.parseAccountGroupsResponse(response);
+    } catch (error) {
+      logger.error('Failed to get account groups:', error);
+      throw error;
+    }
+  }
+
+  async parseAccountGroupsResponse(xmlResponse) {
+    const groups = [];
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let groupList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          groupList = coll.GROUP || [];
+        } else if (collection.GROUP) {
+          groupList = collection.GROUP || [];
+        }
+      }
+
+      if (!Array.isArray(groupList)) groupList = [groupList];
+
+      for (const group of groupList) {
+        const name = (group.$ && group.$.NAME) || this.getXml2jsValue(group.NAME) || '';
+        if (name.trim()) {
+          const isRevenue = this.getXml2jsValue(group.ISREVENUE) || '';
+          const isDeemedPositive = this.getXml2jsValue(group.ISDEEMEDPOSITIVE) || '';
+          groups.push({
+            name: name.trim(),
+            parent: this.getXml2jsValue(group.PARENT) || '',
+            // Tally: ISDEEMEDPOSITIVE=Yes means Debit nature, No means Credit nature
+            nature: isDeemedPositive.toLowerCase() === 'yes' ? 'debit' : 'credit',
+            is_revenue: isRevenue.toLowerCase() === 'yes'
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for groups, falling back to regex:', error.message);
+      const pattern = /<GROUP\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/GROUP>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const content = match[2];
+        if (name) {
+          const isDeemedPositive = this.extractTagValue(content, 'ISDEEMEDPOSITIVE');
+          groups.push({
+            name,
+            parent: this.extractTagValue(content, 'PARENT'),
+            nature: isDeemedPositive.toLowerCase() === 'yes' ? 'debit' : 'credit',
+            is_revenue: this.extractTagValue(content, 'ISREVENUE').toLowerCase() === 'yes'
+          });
+        }
+      }
+    }
+    logger.info(`Parsed ${groups.length} account groups from Tally`);
+    return groups;
+  }
+
+  /**
+   * Get all Ledgers with Opening Balances from Tally
+   */
+  async getLedgersWithOpeningBalances() {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>AllLedgersWithBalances</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="AllLedgersWithBalances">
+            <TYPE>Ledger</TYPE>
+            <FETCH>NAME, PARENT, OPENINGBALANCE, CLOSINGBALANCE, PARTYGSTIN, EMAIL, LEDSTATENAME, LEDGERPHONE</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+    try {
+      const response = await this.sendRequest(xml);
+      return await this.parseLedgersWithBalancesResponse(response);
+    } catch (error) {
+      logger.error('Failed to get ledgers with balances:', error);
+      throw error;
+    }
+  }
+
+  async parseLedgersWithBalancesResponse(xmlResponse) {
+    const ledgers = [];
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let ledgerList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          ledgerList = coll.LEDGER || [];
+        } else if (collection.LEDGER) {
+          ledgerList = collection.LEDGER || [];
+        }
+      }
+
+      if (!Array.isArray(ledgerList)) ledgerList = [ledgerList];
+
+      for (const ledger of ledgerList) {
+        const name = (ledger.$ && ledger.$.NAME) || this.getXml2jsValue(ledger.NAME) || '';
+        if (name.trim()) {
+          // Tally returns opening balance as a number: negative = Credit, positive = Debit
+          const obStr = this.getXml2jsValue(ledger.OPENINGBALANCE) || '0';
+          const obValue = parseFloat(obStr) || 0;
+          const cbStr = this.getXml2jsValue(ledger.CLOSINGBALANCE) || '0';
+          const cbValue = parseFloat(cbStr) || 0;
+
+          ledgers.push({
+            name: name.trim(),
+            parent: this.getXml2jsValue(ledger.PARENT) || '',
+            opening_balance: Math.abs(obValue),
+            opening_balance_type: obValue < 0 ? 'Cr' : 'Dr',
+            closing_balance: Math.abs(cbValue),
+            closing_balance_type: cbValue < 0 ? 'Cr' : 'Dr',
+            gstin: this.getXml2jsValue(ledger.PARTYGSTIN) || '',
+            email: this.getXml2jsValue(ledger.EMAIL) || '',
+            state: this.getXml2jsValue(ledger.LEDSTATENAME) || '',
+            phone: this.getXml2jsValue(ledger.LEDGERPHONE) || ''
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for ledgers with balances, falling back to regex:', error.message);
+      const pattern = /<LEDGER\s+NAME="([^"]+)"[^>]*>([\s\S]*?)<\/LEDGER>/gi;
+      let match;
+      while ((match = pattern.exec(xmlResponse)) !== null) {
+        const name = this.decodeXmlEntities(match[1]).trim();
+        const content = match[2];
+        if (name) {
+          const obStr = this.extractTagValue(content, 'OPENINGBALANCE') || '0';
+          const obValue = parseFloat(obStr) || 0;
+          const cbStr = this.extractTagValue(content, 'CLOSINGBALANCE') || '0';
+          const cbValue = parseFloat(cbStr) || 0;
+          ledgers.push({
+            name,
+            parent: this.extractTagValue(content, 'PARENT'),
+            opening_balance: Math.abs(obValue),
+            opening_balance_type: obValue < 0 ? 'Cr' : 'Dr',
+            closing_balance: Math.abs(cbValue),
+            closing_balance_type: cbValue < 0 ? 'Cr' : 'Dr',
+            gstin: this.extractTagValue(content, 'PARTYGSTIN'),
+            email: this.extractTagValue(content, 'EMAIL'),
+            state: this.extractTagValue(content, 'LEDSTATENAME'),
+            phone: this.extractTagValue(content, 'LEDGERPHONE')
+          });
+        }
+      }
+    }
+    logger.info(`Parsed ${ledgers.length} ledgers with balances from Tally`);
+    return ledgers;
+  }
+
+  /**
+   * Get ALL vouchers (all types) with line entries from Tally for a date range
+   */
+  async getAllVouchers(startDate, endDate) {
+    const formattedStartDate = this.formatTallyDate(startDate);
+    const formattedEndDate = this.formatTallyDate(endDate);
+
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>AllVouchers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${formattedStartDate}</SVFROMDATE>
+        <SVTODATE>${formattedEndDate}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="AllVouchers">
+            <TYPE>Voucher</TYPE>
+            <FETCH>DATE, VOUCHERNUMBER, VOUCHERTYPENAME, PARTYLEDGERNAME, AMOUNT, NARRATION, REFERENCE</FETCH>
+            <FETCH>ALLLEDGERENTRIES.LIST</FETCH>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+    try {
+      const response = await this.sendRequest(xml, 3); // More retries for large data
+      logger.info('Tally getAllVouchers response length:', response ? response.length : 0);
+      return await this.parseAllVouchersResponse(response);
+    } catch (error) {
+      logger.error('Failed to get all vouchers:', error);
+      throw error;
+    }
+  }
+
+  async parseAllVouchersResponse(xmlResponse) {
+    const vouchers = [];
+
+    try {
+      const parsed = await this.parseXmlResponse(xmlResponse);
+      const envelope = parsed.ENVELOPE || parsed;
+
+      let voucherList = [];
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          voucherList = coll.VOUCHER || [];
+        } else if (collection.VOUCHER) {
+          voucherList = collection.VOUCHER || [];
+        }
+      }
+
+      if (!Array.isArray(voucherList)) voucherList = [voucherList];
+
+      for (const voucher of voucherList) {
+        const voucherNumber = this.getXml2jsValue(voucher.VOUCHERNUMBER) || '';
+        const voucherType = this.getXml2jsValue(voucher.VOUCHERTYPENAME) || '';
+
+        if (!voucherNumber) continue;
+
+        const dateStr = this.getXml2jsValue(voucher.DATE) || '';
+        let voucherDate = '';
+        if (dateStr && dateStr.length === 8) {
+          voucherDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+        }
+
+        // Parse ledger entries (ALLLEDGERENTRIES.LIST)
+        const entries = [];
+        let entryList = voucher['ALLLEDGERENTRIES.LIST'] || [];
+        if (!Array.isArray(entryList)) entryList = [entryList];
+
+        for (const entry of entryList) {
+          if (!entry) continue;
+          const ledgerName = this.getXml2jsValue(entry.LEDGERNAME) || '';
+          const amountStr = this.getXml2jsValue(entry.AMOUNT) || '0';
+          const amount = parseFloat(amountStr) || 0;
+          const isDeemedPositive = this.getXml2jsValue(entry.ISDEEMEDPOSITIVE) || '';
+
+          if (ledgerName) {
+            entries.push({
+              ledger_name: ledgerName.trim(),
+              amount: Math.abs(amount),
+              // In Tally: negative amount = Debit, positive = Credit for ledger entries
+              // But ISDEEMEDPOSITIVE overrides: Yes = Debit side, No = Credit side
+              is_debit: isDeemedPositive ? isDeemedPositive.toLowerCase() === 'yes' : amount < 0
+            });
+          }
+        }
+
+        vouchers.push({
+          voucher_number: voucherNumber,
+          voucher_type: voucherType,
+          date: voucherDate,
+          party_name: this.getXml2jsValue(voucher.PARTYLEDGERNAME) || '',
+          total_amount: Math.abs(parseFloat(this.getXml2jsValue(voucher.AMOUNT))) || 0,
+          narration: this.getXml2jsValue(voucher.NARRATION) || '',
+          reference: this.getXml2jsValue(voucher.REFERENCE) || '',
+          entries: entries
+        });
+      }
+    } catch (error) {
+      logger.warn('xml2js parsing failed for all vouchers, falling back to regex:', error.message);
+      // Regex fallback for vouchers with entries
+      const voucherPattern = /<VOUCHER[^>]*>([\s\S]*?)<\/VOUCHER>/gi;
+      let voucherMatch;
+      while ((voucherMatch = voucherPattern.exec(xmlResponse)) !== null) {
+        const content = voucherMatch[1];
+        const voucherNumber = this.extractTagValue(content, 'VOUCHERNUMBER');
+        if (!voucherNumber) continue;
+
+        const voucherType = this.extractTagValue(content, 'VOUCHERTYPENAME');
+        const dateStr = this.extractTagValue(content, 'DATE');
+        let voucherDate = '';
+        if (dateStr && dateStr.length === 8) {
+          voucherDate = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+        }
+
+        // Parse entries from ALLLEDGERENTRIES.LIST blocks
+        const entries = [];
+        const entryPattern = /<ALLLEDGERENTRIES\.LIST>([\s\S]*?)<\/ALLLEDGERENTRIES\.LIST>/gi;
+        let entryMatch;
+        while ((entryMatch = entryPattern.exec(content)) !== null) {
+          const entryContent = entryMatch[1];
+          const ledgerName = this.extractTagValue(entryContent, 'LEDGERNAME');
+          const amountStr = this.extractTagValue(entryContent, 'AMOUNT') || '0';
+          const amount = parseFloat(amountStr) || 0;
+          const isDeemedPositive = this.extractTagValue(entryContent, 'ISDEEMEDPOSITIVE');
+
+          if (ledgerName) {
+            entries.push({
+              ledger_name: ledgerName.trim(),
+              amount: Math.abs(amount),
+              is_debit: isDeemedPositive ? isDeemedPositive.toLowerCase() === 'yes' : amount < 0
+            });
+          }
+        }
+
+        vouchers.push({
+          voucher_number: voucherNumber,
+          voucher_type: voucherType,
+          date: voucherDate,
+          party_name: this.extractTagValue(content, 'PARTYLEDGERNAME'),
+          total_amount: Math.abs(parseFloat(this.extractTagValue(content, 'AMOUNT'))) || 0,
+          narration: this.extractTagValue(content, 'NARRATION'),
+          reference: this.extractTagValue(content, 'REFERENCE'),
+          entries: entries
+        });
+      }
+    }
+
+    logger.info(`Parsed ${vouchers.length} vouchers (all types) from Tally`);
+    return vouchers;
+  }
+
+  // ==========================================
+  // FULL BOOKS TWO-WAY SYNC METHODS
+  // ==========================================
+
+  /**
+   * Fetch vouchers from Tally filtered by specific voucher types.
+   * Optimization over getAllVouchers() when only subset of types needed.
+   */
+  async getVouchersByTypes(startDate, endDate, voucherTypes) {
+    if (!voucherTypes || voucherTypes.length === 0) {
+      return await this.getAllVouchers(startDate, endDate);
+    }
+
+    const formattedStartDate = this.formatTallyDate(startDate);
+    const formattedEndDate = this.formatTallyDate(endDate);
+
+    // Build TDL filter for selected voucher types
+    const typeConditions = voucherTypes.map(t => `$VOUCHERTYPENAME = "${this.escapeXml(t)}"`).join(' OR ');
+
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>FilteredVouchers</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVFROMDATE>${formattedStartDate}</SVFROMDATE>
+        <SVTODATE>${formattedEndDate}</SVTODATE>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="FilteredVouchers">
+            <TYPE>Voucher</TYPE>
+            <FILTER>VoucherTypeFilter</FILTER>
+            <FETCH>DATE, VOUCHERNUMBER, VOUCHERTYPENAME, PARTYLEDGERNAME, AMOUNT, NARRATION, REFERENCE</FETCH>
+            <FETCH>ALLLEDGERENTRIES.LIST</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="VoucherTypeFilter">
+            ${typeConditions}
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const response = await this.sendRequest(xml, 3);
+      logger.info(`Tally getVouchersByTypes response length: ${response ? response.length : 0} (types: ${voucherTypes.join(', ')})`);
+      return await this.parseAllVouchersResponse(response);
+    } catch (error) {
+      logger.error('Failed to get vouchers by types:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure a ledger exists in Tally; create it if not found.
+   * Generic version of ensurePartyLedger() for any ledger type.
+   */
+  async ensureLedgerExists(ledgerName, parentGroup) {
+    if (!ledgerName) return;
+
+    const checkXml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>CheckLedger</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="CheckLedger">
+            <TYPE>Ledger</TYPE>
+            <FILTER>LedgerNameFilter</FILTER>
+            <FETCH>NAME</FETCH>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="LedgerNameFilter">
+            $NAME = "${this.escapeXml(ledgerName)}"
+          </SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const response = await this.sendRequest(checkXml);
+      const parsed = await this.parseXmlResponse(response);
+      const envelope = parsed.ENVELOPE || parsed;
+      let found = false;
+
+      if (envelope.BODY) {
+        const body = Array.isArray(envelope.BODY) ? envelope.BODY[0] : envelope.BODY;
+        const data = body.DATA || body;
+        const collection = Array.isArray(data) ? data[0] : data;
+        if (collection.COLLECTION) {
+          const coll = Array.isArray(collection.COLLECTION) ? collection.COLLECTION[0] : collection.COLLECTION;
+          found = !!(coll.LEDGER);
+        } else if (collection.LEDGER) {
+          found = true;
+        }
+      }
+
+      if (!found && parentGroup) {
+        await this.createGenericLedger(ledgerName, parentGroup);
+      }
+    } catch (error) {
+      logger.warn(`Could not verify ledger "${ledgerName}", attempting creation:`, error.message);
+      if (parentGroup) {
+        await this.createGenericLedger(ledgerName, parentGroup);
+      }
+    }
+  }
+
+  /**
+   * Create a generic ledger in Tally under the specified parent group.
+   */
+  async createGenericLedger(ledgerName, parentGroup) {
+    const name = this.escapeXml(ledgerName);
+    const parent = this.escapeXml(parentGroup);
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>All Masters</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <LEDGER NAME="${name}" ACTION="Create">
+            <NAME>${name}</NAME>
+            <PARENT>${parent}</PARENT>
+            <AFFECTSSTOCK>No</AFFECTSSTOCK>
+          </LEDGER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+    try {
+      const response = await this.sendRequest(xml);
+      const result = this.parseVoucherResponse(response);
+      if (result.errors > 0) {
+        logger.warn(`Could not create ledger "${ledgerName}" under "${parentGroup}": ${result.errorMessage}`);
+      } else {
+        logger.info(`Created ledger: ${ledgerName} (under ${parentGroup})`);
+      }
+    } catch (error) {
+      logger.warn(`Failed to create ledger "${ledgerName}":`, error.message);
+    }
+  }
+
+  /**
+   * Build Tally Import XML for ANY voucher type.
+   * Generic builder — works for Sales, Purchase, Receipt, Payment, Contra, Journal, etc.
+   */
+  createVoucherXml(voucher) {
+    const voucherType = this.escapeXml(voucher.voucher_type_display || 'Sales');
+    const voucherNumber = this.escapeXml(voucher.voucher_number || '');
+    const voucherDate = this.formatTallyDate(voucher.voucher_date);
+    const partyName = voucher.party_ledger_name ? this.escapeXml(voucher.party_ledger_name) : '';
+    const narration = this.escapeXml(
+      ((voucher.narration || '') + ' [Synced from NexInvo+]').trim()
+    );
+
+    // Build ALLLEDGERENTRIES.LIST from entries
+    let ledgerEntries = '';
+    for (const entry of (voucher.entries || [])) {
+      const ledgerName = this.escapeXml(entry.ledger_name);
+      const amount = parseFloat(entry.amount) || 0;
+      if (amount === 0) continue;
+
+      // In Tally: ISDEEMEDPOSITIVE=Yes means Debit, No means Credit
+      // AMOUNT sign: negative = debit side, positive = credit side
+      const isDebit = entry.is_debit;
+      const isDeemedPositive = isDebit ? 'Yes' : 'No';
+      const tallyAmount = isDebit ? (-Math.abs(amount)) : Math.abs(amount);
+
+      ledgerEntries += `
+        <ALLLEDGERENTRIES.LIST>
+          <LEDGERNAME>${ledgerName}</LEDGERNAME>
+          <ISDEEMEDPOSITIVE>${isDeemedPositive}</ISDEEMEDPOSITIVE>
+          <AMOUNT>${tallyAmount.toFixed(2)}</AMOUNT>
+        </ALLLEDGERENTRIES.LIST>`;
+    }
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="${voucherType}" ACTION="Create">
+            <DATE>${voucherDate}</DATE>
+            <VOUCHERTYPENAME>${voucherType}</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>${voucherNumber}</VOUCHERNUMBER>
+            ${partyName ? `<PARTYLEDGERNAME>${partyName}</PARTYLEDGERNAME>` : ''}
+            <NARRATION>${narration}</NARRATION>
+            <EFFECTIVEDATE>${voucherDate}</EFFECTIVEDATE>
+            ${ledgerEntries}
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+    return xml;
+  }
+
+  /**
+   * Post a single voucher (any type) to Tally.
+   * Ensures party and entry ledgers exist before posting.
+   */
+  async syncVoucher(voucher) {
+    try {
+      // Ensure party ledger exists if voucher has a party
+      if (voucher.party_ledger_name) {
+        await this.ensurePartyLedger(
+          { name: voucher.party_ledger_name },
+          { defaultPartyGroup: voucher.party_group || 'Sundry Debtors' }
+        );
+      }
+
+      // Ensure all entry ledgers exist in Tally
+      for (const entry of (voucher.entries || [])) {
+        if (entry.ledger_name && entry.ledger_group) {
+          await this.ensureLedgerExists(entry.ledger_name, entry.ledger_group);
+        }
+      }
+
+      // Build XML and post
+      const voucherXml = this.createVoucherXml(voucher);
+      const response = await this.sendRequest(voucherXml);
+      const result = this.parseVoucherResponse(response);
+
+      if (result.created > 0 || result.altered > 0) {
+        logger.info(`Voucher ${voucher.voucher_number} (${voucher.voucher_type_display}) synced to Tally`);
+        return { success: true, voucherNumber: voucher.voucher_number };
+      } else if (result.errors > 0) {
+        throw new Error(`Tally error: ${result.errorMessage || 'Unknown error'}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      logger.error(`Failed to sync voucher ${voucher.voucher_number}:`, error);
+      throw error;
+    }
+  }
 }
 
 module.exports = TallyConnector;

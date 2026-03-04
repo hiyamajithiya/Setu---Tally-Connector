@@ -414,68 +414,201 @@
                       <span class="step-badge">Step 2</span>
                       <h4>Configure Ledger Mappings</h4>
                     </div>
-                    <p class="step-description">Select the corresponding Tally ledger for each category</p>
+                    <p class="step-description">Map Tally ledgers for two-way sync: Sales (NexInvo+ → Tally) and Purchase (Tally → NexInvo+)</p>
 
                     <form id="ledger-mapping-form" class="mapping-form">
-                      <div class="mapping-grid">
-                        <div class="mapping-item">
-                          <label for="sales-ledger">
-                            <span class="mapping-label">Sales Ledger</span>
-                            <span class="mapping-hint">For recording sales revenue</span>
-                          </label>
-                          <select id="sales-ledger" required>
-                            <option value="">Select Ledger</option>
-                          </select>
+                      <!-- Sales-side Mappings -->
+                      <div class="mapping-section">
+                        <div class="mapping-section-header">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                          </svg>
+                          <div>
+                            <h5>Sales Side</h5>
+                            <span class="mapping-section-hint">Used when posting sales invoices from NexInvo+ to Tally</span>
+                          </div>
                         </div>
-
-                        <div class="mapping-item">
-                          <label for="cgst-ledger">
-                            <span class="mapping-label">CGST Output</span>
-                            <span class="mapping-hint">Central GST on sales</span>
-                          </label>
-                          <select id="cgst-ledger" required>
-                            <option value="">Select Ledger</option>
-                          </select>
+                        <div class="mapping-grid">
+                          <div class="mapping-item">
+                            <label for="sales-ledger">
+                              <span class="mapping-label">Sales Ledger</span>
+                              <span class="mapping-hint">For recording sales revenue</span>
+                            </label>
+                            <select id="sales-ledger" required>
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="cgst-ledger">
+                              <span class="mapping-label">CGST Output</span>
+                              <span class="mapping-hint">Central GST on sales</span>
+                            </label>
+                            <select id="cgst-ledger" required>
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="sgst-ledger">
+                              <span class="mapping-label">SGST Output</span>
+                              <span class="mapping-hint">State GST on sales</span>
+                            </label>
+                            <select id="sgst-ledger" required>
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="igst-ledger">
+                              <span class="mapping-label">IGST Output</span>
+                              <span class="mapping-hint">Integrated GST on interstate sales</span>
+                            </label>
+                            <select id="igst-ledger" required>
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="roundoff-ledger">
+                              <span class="mapping-label">Round Off</span>
+                              <span class="mapping-hint">For rounding adjustments</span>
+                            </label>
+                            <select id="roundoff-ledger">
+                              <option value="">Select Ledger (Optional)</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="discount-ledger">
+                              <span class="mapping-label">Discount Allowed</span>
+                              <span class="mapping-hint">Discount given to customers</span>
+                            </label>
+                            <select id="discount-ledger">
+                              <option value="">Select Ledger (Optional)</option>
+                            </select>
+                          </div>
                         </div>
+                      </div>
 
-                        <div class="mapping-item">
-                          <label for="sgst-ledger">
-                            <span class="mapping-label">SGST Output</span>
-                            <span class="mapping-hint">State GST on sales</span>
-                          </label>
-                          <select id="sgst-ledger" required>
-                            <option value="">Select Ledger</option>
-                          </select>
+                      <!-- Purchase-side Mappings -->
+                      <div class="mapping-section">
+                        <div class="mapping-section-header">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                          </svg>
+                          <div>
+                            <h5>Purchase Side</h5>
+                            <span class="mapping-section-hint">Used when importing purchase vouchers from Tally to NexInvo+</span>
+                          </div>
                         </div>
-
-                        <div class="mapping-item">
-                          <label for="igst-ledger">
-                            <span class="mapping-label">IGST Output</span>
-                            <span class="mapping-hint">Integrated GST on interstate sales</span>
-                          </label>
-                          <select id="igst-ledger" required>
-                            <option value="">Select Ledger</option>
-                          </select>
+                        <div class="mapping-grid">
+                          <div class="mapping-item">
+                            <label for="purchase-ledger">
+                              <span class="mapping-label">Purchase Ledger</span>
+                              <span class="mapping-hint">For recording purchase expenses</span>
+                            </label>
+                            <select id="purchase-ledger">
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="cgst-input-ledger">
+                              <span class="mapping-label">CGST Input</span>
+                              <span class="mapping-hint">Input CGST on purchases</span>
+                            </label>
+                            <select id="cgst-input-ledger">
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="sgst-input-ledger">
+                              <span class="mapping-label">SGST Input</span>
+                              <span class="mapping-hint">Input SGST on purchases</span>
+                            </label>
+                            <select id="sgst-input-ledger">
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="igst-input-ledger">
+                              <span class="mapping-label">IGST Input</span>
+                              <span class="mapping-hint">Input IGST on interstate purchases</span>
+                            </label>
+                            <select id="igst-input-ledger">
+                              <option value="">Select Ledger</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="discount-received-ledger">
+                              <span class="mapping-label">Discount Received</span>
+                              <span class="mapping-hint">Discount received from suppliers</span>
+                            </label>
+                            <select id="discount-received-ledger">
+                              <option value="">Select Ledger (Optional)</option>
+                            </select>
+                          </div>
                         </div>
+                      </div>
 
-                        <div class="mapping-item">
-                          <label for="roundoff-ledger">
-                            <span class="mapping-label">Round Off</span>
-                            <span class="mapping-hint">For rounding adjustments</span>
-                          </label>
-                          <select id="roundoff-ledger">
-                            <option value="">Select Ledger (Optional)</option>
-                          </select>
+                      <!-- Bank & Cash Mappings -->
+                      <div class="mapping-section">
+                        <div class="mapping-section-header">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+                          </svg>
+                          <div>
+                            <h5>Bank &amp; Cash</h5>
+                            <span class="mapping-section-hint">Used for Receipt, Payment, and Contra vouchers in both directions</span>
+                          </div>
                         </div>
+                        <div class="mapping-grid">
+                          <div class="mapping-item">
+                            <label for="bank-ledger">
+                              <span class="mapping-label">Bank Account</span>
+                              <span class="mapping-hint">Primary bank account ledger</span>
+                            </label>
+                            <select id="bank-ledger">
+                              <option value="">Select Ledger (Optional)</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="cash-ledger">
+                              <span class="mapping-label">Cash Account</span>
+                              <span class="mapping-hint">Cash-in-hand ledger</span>
+                            </label>
+                            <select id="cash-ledger">
+                              <option value="">Select Ledger (Optional)</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
 
-                        <div class="mapping-item">
-                          <label for="discount-ledger">
-                            <span class="mapping-label">Discount</span>
-                            <span class="mapping-hint">For discount given to customers</span>
-                          </label>
-                          <select id="discount-ledger">
-                            <option value="">Select Ledger (Optional)</option>
-                          </select>
+                      <!-- Party Group Mappings -->
+                      <div class="mapping-section">
+                        <div class="mapping-section-header">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                          <div>
+                            <h5>Party Groups</h5>
+                            <span class="mapping-section-hint">Tally groups under which clients/suppliers are created</span>
+                          </div>
+                        </div>
+                        <div class="mapping-grid">
+                          <div class="mapping-item">
+                            <label for="debtor-party-group">
+                              <span class="mapping-label">Debtors Group</span>
+                              <span class="mapping-hint">For customers / sales parties</span>
+                            </label>
+                            <select id="debtor-party-group">
+                              <option value="">Select Group</option>
+                            </select>
+                          </div>
+                          <div class="mapping-item">
+                            <label for="creditor-party-group">
+                              <span class="mapping-label">Creditors Group</span>
+                              <span class="mapping-hint">For suppliers / purchase parties</span>
+                            </label>
+                            <select id="creditor-party-group">
+                              <option value="">Select Group</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
 
@@ -612,12 +745,49 @@
                       </div>
                     </div>
 
+                    <!-- Sync Mode Toggle -->
+                    <div class="sync-mode-toggle">
+                      <label class="toggle-label">Sync Mode</label>
+                      <div class="toggle-options">
+                        <label class="toggle-option">
+                          <input type="radio" name="manual-sync-mode" value="invoices" checked>
+                          <span class="toggle-btn">Invoice Sync</span>
+                        </label>
+                        <label class="toggle-option">
+                          <input type="radio" name="manual-sync-mode" value="vouchers">
+                          <span class="toggle-btn">Full Books Sync</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <!-- Voucher Type Filter (visible in Full Books mode) -->
+                    <div class="voucher-type-filter hidden" id="manual-voucher-type-filter">
+                      <label class="toggle-label">Voucher Types</label>
+                      <div class="voucher-type-actions">
+                        <button type="button" class="btn-link" id="manual-select-all-types">Select All</button>
+                        <button type="button" class="btn-link" id="manual-deselect-all-types">Deselect All</button>
+                      </div>
+                      <div class="voucher-type-grid">
+                        <label class="voucher-type-chip"><input type="checkbox" value="Sales" checked><span class="vtype-badge vtype-sales">Sales</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Purchase" checked><span class="vtype-badge vtype-purchase">Purchase</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Receipt" checked><span class="vtype-badge vtype-receipt">Receipt</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Payment" checked><span class="vtype-badge vtype-payment">Payment</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Contra" checked><span class="vtype-badge vtype-contra">Contra</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Journal" checked><span class="vtype-badge vtype-journal">Journal</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Debit Note" checked><span class="vtype-badge vtype-debitnote">Debit Note</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Credit Note" checked><span class="vtype-badge vtype-creditnote">Credit Note</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Stock Journal"><span class="vtype-badge vtype-stock">Stock Journal</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Delivery Note"><span class="vtype-badge vtype-stock">Delivery Note</span></label>
+                        <label class="voucher-type-chip"><input type="checkbox" value="Receipt Note"><span class="vtype-badge vtype-stock">Receipt Note</span></label>
+                      </div>
+                    </div>
+
                     <button type="button" class="btn btn-primary btn-lg" id="fetch-sync-preview-btn">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="11" cy="11" r="8"/>
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                       </svg>
-                      Fetch & Compare Invoices
+                      <span id="fetch-sync-btn-text">Fetch & Compare Invoices</span>
                     </button>
                   </div>
 
@@ -823,6 +993,14 @@
                     <h2>Import from Tally</h2>
                     <p>Bring your Tally data into <span class="app-name">NexInvo</span> with just a few clicks</p>
                   </div>
+                  <button class="btn btn-full-import" id="full-import-btn" title="Import everything: Company, Accounts, Ledgers, and Vouchers in one go">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Full Books Import
+                  </button>
                 </div>
 
                 <!-- Step Indicator -->
@@ -900,6 +1078,47 @@
                       <div class="type-card-content">
                         <h5>Products / Services</h5>
                         <p>Import stock items and services from your Tally inventory</p>
+                      </div>
+                      <div class="type-card-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div class="import-type-card" data-import-tab="accounts">
+                      <div class="type-card-icon accounts-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/>
+                          <path d="M8 7h8"/>
+                          <path d="M8 11h8"/>
+                          <path d="M8 15h5"/>
+                        </svg>
+                      </div>
+                      <div class="type-card-content">
+                        <h5>Chart of Accounts</h5>
+                        <p>Import account groups, ledgers, and opening balances from Tally</p>
+                      </div>
+                      <div class="type-card-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div class="import-type-card" data-import-tab="vouchers">
+                      <div class="type-card-icon vouchers-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="16" y1="13" x2="8" y2="13"/>
+                          <line x1="16" y1="17" x2="8" y2="17"/>
+                          <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                      </div>
+                      <div class="type-card-content">
+                        <h5>Day Book / Vouchers</h5>
+                        <p>Import all transactions &mdash; Sales, Purchase, Receipt, Payment, Journal, Contra</p>
                       </div>
                       <div class="type-card-check">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -1108,6 +1327,182 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Chart of Accounts Import Section -->
+                <div id="import-accounts-content" class="import-content hidden">
+                  <div class="fetch-section">
+                    <div class="fetch-info">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      <span>Fetch account groups and all ledger accounts with opening balances from Tally</span>
+                    </div>
+                    <button class="btn btn-fetch" id="fetch-accounts-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Chart of Accounts from Tally
+                    </button>
+                  </div>
+
+                  <div id="accounts-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Connecting to Tally and fetching account groups & ledgers...</p>
+                  </div>
+
+                  <div id="accounts-preview" class="items-list-container hidden">
+                    <div class="accounts-summary-cards">
+                      <div class="summary-card">
+                        <div class="summary-number" id="groups-count">0</div>
+                        <div class="summary-label">Account Groups</div>
+                      </div>
+                      <div class="summary-card">
+                        <div class="summary-number" id="ledgers-count">0</div>
+                        <div class="summary-label">Ledger Accounts</div>
+                      </div>
+                      <div class="summary-card">
+                        <div class="summary-number" id="ledgers-with-ob-count">0</div>
+                        <div class="summary-label">With Opening Balance</div>
+                      </div>
+                    </div>
+
+                    <div class="accounts-tables">
+                      <div class="table-section">
+                        <h4>Account Groups <span class="badge" id="groups-badge">0</span></h4>
+                        <div class="table-scroll" id="groups-table-container">
+                          <table class="data-table">
+                            <thead>
+                              <tr>
+                                <th>Group Name</th>
+                                <th>Parent Group</th>
+                                <th>Nature</th>
+                              </tr>
+                            </thead>
+                            <tbody id="groups-table-body"></tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div class="table-section">
+                        <h4>Ledger Accounts <span class="badge" id="ledgers-badge">0</span></h4>
+                        <div class="table-scroll" id="ledgers-table-container">
+                          <table class="data-table">
+                            <thead>
+                              <tr>
+                                <th>Ledger Name</th>
+                                <th>Group</th>
+                                <th>Opening Balance</th>
+                                <th>Type</th>
+                              </tr>
+                            </thead>
+                            <tbody id="ledgers-table-body"></tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="import-actions">
+                      <button class="btn btn-import" id="import-accounts-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M5 12h14"/>
+                          <path d="M12 5l7 7-7 7"/>
+                        </svg>
+                        Import Chart of Accounts to <span class="app-name">NexInvo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div id="accounts-result" class="import-result hidden"></div>
+                </div>
+
+                <!-- Day Book / Vouchers Import Section -->
+                <div id="import-vouchers-content" class="import-content hidden">
+                  <div class="fetch-section">
+                    <div class="fetch-info">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                      </svg>
+                      <span>Select a date range and fetch all vouchers (transactions) from Tally</span>
+                    </div>
+                    <div class="voucher-date-range">
+                      <div class="form-group">
+                        <label for="voucher-start-date">From Date</label>
+                        <input type="date" id="voucher-start-date">
+                      </div>
+                      <div class="form-group">
+                        <label for="voucher-end-date">To Date</label>
+                        <input type="date" id="voucher-end-date">
+                      </div>
+                    </div>
+                    <button class="btn btn-fetch" id="fetch-vouchers-btn">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Fetch Vouchers from Tally
+                    </button>
+                  </div>
+
+                  <div id="vouchers-loading" class="loading-state hidden">
+                    <div class="loader"></div>
+                    <p>Connecting to Tally and fetching all vouchers...</p>
+                  </div>
+
+                  <div id="vouchers-preview" class="items-list-container hidden">
+                    <div class="accounts-summary-cards">
+                      <div class="summary-card">
+                        <div class="summary-number" id="vouchers-total-count">0</div>
+                        <div class="summary-label">Total Vouchers</div>
+                      </div>
+                      <div class="summary-card">
+                        <div class="summary-number" id="vouchers-new-count">0</div>
+                        <div class="summary-label">New (To Import)</div>
+                      </div>
+                      <div class="summary-card">
+                        <div class="summary-number" id="vouchers-duplicate-count">0</div>
+                        <div class="summary-label">Duplicates (Skip)</div>
+                      </div>
+                      <div class="summary-card">
+                        <div class="summary-number" id="vouchers-missing-ledgers-count">0</div>
+                        <div class="summary-label">Missing Ledgers</div>
+                      </div>
+                    </div>
+
+                    <div class="voucher-type-breakdown">
+                      <h4>Breakdown by Type</h4>
+                      <div id="voucher-type-chips" class="voucher-type-chips"></div>
+                    </div>
+
+                    <div id="vouchers-missing-ledgers-section" class="missing-ledgers-section hidden">
+                      <h4>Missing Ledgers</h4>
+                      <p class="text-muted">These ledgers exist in Tally but not in <span class="app-name">NexInvo</span>. Enable auto-create to import them automatically.</p>
+                      <div id="missing-ledgers-list" class="missing-ledgers-list"></div>
+                      <label class="checkbox-label">
+                        <input type="checkbox" id="auto-create-ledgers" checked>
+                        <span>Auto-create missing ledgers during import</span>
+                      </label>
+                    </div>
+
+                    <div class="import-actions">
+                      <button class="btn btn-import" id="import-vouchers-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M5 12h14"/>
+                          <path d="M12 5l7 7-7 7"/>
+                        </svg>
+                        Import Vouchers to <span class="app-name">NexInvo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div id="vouchers-result" class="import-result hidden"></div>
+                </div>
               </div>
             </div>
 
@@ -1168,6 +1563,45 @@
                   <div class="custom-interval hidden" id="custom-interval-input">
                     <input type="number" id="custom-minutes" min="1" max="1440" value="45" placeholder="Minutes">
                     <span>minutes</span>
+                  </div>
+                </div>
+
+                <!-- Auto Sync Mode -->
+                <div class="interval-section" id="auto-sync-mode-section">
+                  <h4>Sync Mode</h4>
+                  <div class="sync-mode-toggle">
+                    <div class="toggle-options">
+                      <label class="toggle-option">
+                        <input type="radio" name="auto-sync-mode" value="invoices" checked>
+                        <span class="toggle-btn">Invoice Sync</span>
+                      </label>
+                      <label class="toggle-option">
+                        <input type="radio" name="auto-sync-mode" value="vouchers">
+                        <span class="toggle-btn">Full Books Sync</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Voucher Type Filter for Auto Sync -->
+                  <div class="voucher-type-filter hidden" id="auto-voucher-type-filter">
+                    <label class="toggle-label">Voucher Types to Sync</label>
+                    <div class="voucher-type-actions">
+                      <button type="button" class="btn-link" id="auto-select-all-types">Select All</button>
+                      <button type="button" class="btn-link" id="auto-deselect-all-types">Deselect All</button>
+                    </div>
+                    <div class="voucher-type-grid">
+                      <label class="voucher-type-chip"><input type="checkbox" value="Sales" checked><span class="vtype-badge vtype-sales">Sales</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Purchase" checked><span class="vtype-badge vtype-purchase">Purchase</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Receipt" checked><span class="vtype-badge vtype-receipt">Receipt</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Payment" checked><span class="vtype-badge vtype-payment">Payment</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Contra" checked><span class="vtype-badge vtype-contra">Contra</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Journal" checked><span class="vtype-badge vtype-journal">Journal</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Debit Note" checked><span class="vtype-badge vtype-debitnote">Debit Note</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Credit Note" checked><span class="vtype-badge vtype-creditnote">Credit Note</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Stock Journal"><span class="vtype-badge vtype-stock">Stock Journal</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Delivery Note"><span class="vtype-badge vtype-stock">Delivery Note</span></label>
+                      <label class="voucher-type-chip"><input type="checkbox" value="Receipt Note"><span class="vtype-badge vtype-stock">Receipt Note</span></label>
+                    </div>
                   </div>
                 </div>
 

@@ -1046,7 +1046,11 @@ ipcMain.handle('save-ledger-mappings', async (event, mappings) => {
       const tallyLedgers = await tallyConnector.getLedgers();
       const ledgerNames = new Set(tallyLedgers.map(l => l.name.toLowerCase()));
 
-      const ledgerFields = ['salesLedger', 'cgstLedger', 'sgstLedger', 'igstLedger', 'roundOffLedger'];
+      const ledgerFields = [
+        'salesLedger', 'cgstLedger', 'sgstLedger', 'igstLedger', 'roundOffLedger', 'discountLedger',
+        'purchaseLedger', 'cgstInputLedger', 'sgstInputLedger', 'igstInputLedger', 'discountReceivedLedger',
+        'bankLedger', 'cashLedger'
+      ];
       for (const field of ledgerFields) {
         if (mappings[field] && !ledgerNames.has(mappings[field].toLowerCase())) {
           warnings.push(`${field}: "${mappings[field]}" not found in Tally`);
@@ -1323,6 +1327,143 @@ ipcMain.handle('sync-company-to-nexinvo', async (event, companyData) => {
   }
 });
 
+// ==========================================
+// COMPLETE BOOKS IMPORT - Account Groups, Ledgers, Opening Balances, Vouchers
+// ==========================================
+
+// Fetch Account Groups hierarchy from Tally
+ipcMain.handle('fetch-account-groups', async () => {
+  try {
+    const groups = await tallyConnector.getAccountGroups();
+    return { success: true, groups };
+  } catch (error) {
+    logger.error('Failed to fetch account groups:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch all Ledgers with Opening Balances from Tally
+ipcMain.handle('fetch-ledgers-with-balances', async () => {
+  try {
+    const ledgers = await tallyConnector.getLedgersWithOpeningBalances();
+    return { success: true, ledgers };
+  } catch (error) {
+    logger.error('Failed to fetch ledgers with balances:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Fetch all Vouchers (all types) from Tally for a date range
+ipcMain.handle('fetch-all-vouchers', async (event, { startDate, endDate }) => {
+  try {
+    const vouchers = await tallyConnector.getAllVouchers(startDate, endDate);
+    return { success: true, vouchers };
+  } catch (error) {
+    logger.error('Failed to fetch all vouchers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Import Account Groups to NexInvo+
+ipcMain.handle('import-account-groups', async (event, groups) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-account-groups/`, {
+      method: 'POST',
+      body: JSON.stringify({ groups })
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to import account groups');
+    }
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to import account groups:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Import Ledger Accounts to NexInvo+
+ipcMain.handle('import-ledger-accounts', async (event, ledgers) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-ledger-accounts/`, {
+      method: 'POST',
+      body: JSON.stringify({ ledgers })
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to import ledger accounts');
+    }
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to import ledger accounts:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Import Opening Balances to NexInvo+
+ipcMain.handle('import-opening-balances', async (event, balances) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-opening-balances/`, {
+      method: 'POST',
+      body: JSON.stringify({ balances })
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to import opening balances');
+    }
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to import opening balances:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Preview Import Vouchers to NexInvo+
+ipcMain.handle('preview-import-vouchers', async (event, params) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/preview-import-vouchers/`, {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to preview vouchers');
+    }
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to preview import vouchers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Import Vouchers to NexInvo+
+ipcMain.handle('import-vouchers', async (event, params) => {
+  try {
+    const serverUrl = store.get('serverUrl');
+    const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/import-vouchers/`, {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Failed to import vouchers');
+    }
+    const result = await response.json();
+    return { success: true, ...result };
+  } catch (error) {
+    logger.error('Failed to import vouchers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Helper function to get Indian Financial Year start date (April 1st)
 function getIndianFinancialYearStart() {
   const today = new Date();
@@ -1346,6 +1487,11 @@ ipcMain.handle('perform-realtime-sync', async () => {
       throw new Error('Not logged in');
     }
 
+    // Read auto-sync config for sync mode and voucher types
+    const autoSyncConfig = store.get('autoSyncConfig') || {};
+    const syncMode = autoSyncConfig.syncMode || 'invoices';
+    const voucherTypes = autoSyncConfig.voucherTypes || [];
+
     // Determine start date based on last sync or financial year
     const endDate = new Date().toISOString().split('T')[0];
     let startDate;
@@ -1368,6 +1514,127 @@ ipcMain.handle('perform-realtime-sync', async () => {
       logger.info(`Real-time sync: First sync, using FY start date ${startDate}`);
     }
 
+    logger.info(`Real-time sync mode: ${syncMode}`);
+
+    // ===== Full Books mode (Voucher-level two-way sync) =====
+    if (syncMode === 'vouchers') {
+      // Fetch vouchers from Tally (filtered by selected types or all)
+      let tallyVouchers = [];
+      try {
+        if (voucherTypes.length > 0) {
+          tallyVouchers = await tallyConnector.getVouchersByTypes(startDate, endDate, voucherTypes);
+        } else {
+          tallyVouchers = await tallyConnector.getAllVouchers(startDate, endDate);
+        }
+        logger.info(`Fetched ${tallyVouchers.length} vouchers from Tally (full books, ${startDate} to ${endDate})`);
+      } catch (tallyError) {
+        logger.warn('Could not fetch Tally vouchers:', tallyError.message);
+      }
+
+      // Compare against Voucher model
+      const previewResponse = await fetchWithAuth(`${serverUrl}/api/tally-sync/two-way-voucher-preview/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tally_vouchers: tallyVouchers,
+          start_date: startDate,
+          end_date: endDate,
+          voucher_types: voucherTypes
+        })
+      });
+
+      if (!previewResponse.ok) {
+        const errData = await previewResponse.json().catch(() => ({}));
+        logger.error('Voucher preview API failed:', errData);
+        throw new Error(errData.error || 'Failed to compare vouchers');
+      }
+
+      const previewResult = await previewResponse.json();
+      const toTally = previewResult.to_tally || [];
+      const toNexinvo = previewResult.to_nexinvo || [];
+      const matched = previewResult.matched || [];
+
+      logger.info(`Voucher preview: ${toTally.length} to Tally, ${toNexinvo.length} to NexInvo, ${matched.length} matched`);
+
+      let toTallyCount = 0;
+      let toNexinvoCount = 0;
+      let errorsCount = 0;
+
+      // Sync NexInvo vouchers to Tally via Tally Connector
+      if (toTally.length > 0) {
+        const syncedIds = [];
+        for (const voucher of toTally) {
+          try {
+            const tallyVoucher = {
+              voucher_type_display: voucher.voucher_type_display || voucher.voucher_type,
+              voucher_number: voucher.voucher_number,
+              voucher_date: voucher.date || voucher.voucher_date,
+              party_ledger_name: voucher.party_name || voucher.party_ledger_name || '',
+              narration: voucher.narration || '',
+              entries: voucher.entries || []
+            };
+            await tallyConnector.syncVoucher(tallyVoucher);
+            syncedIds.push(voucher.id);
+            toTallyCount++;
+          } catch (err) {
+            logger.error(`Error syncing voucher ${voucher.voucher_number} to Tally:`, err.message);
+            errorsCount++;
+          }
+        }
+        // Mark synced in NexInvo
+        if (syncedIds.length > 0) {
+          try {
+            await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-vouchers-to-tally/`, {
+              method: 'POST',
+              body: JSON.stringify({ voucher_ids: syncedIds })
+            });
+          } catch (err) {
+            logger.error('Error marking vouchers as synced:', err.message);
+          }
+        }
+      }
+
+      // Sync Tally vouchers to NexInvo
+      if (toNexinvo.length > 0) {
+        try {
+          const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-vouchers-to-nexinvo/`, {
+            method: 'POST',
+            body: JSON.stringify({ vouchers: toNexinvo, force_sync: false, auto_create_ledgers: true })
+          });
+          if (response.ok) {
+            const result = await response.json();
+            toNexinvoCount = result.created_count || 0;
+            errorsCount += (result.failed_count || 0);
+          } else {
+            errorsCount += toNexinvo.length;
+          }
+        } catch (error) {
+          logger.error('Error syncing vouchers to NexInvo:', error);
+          errorsCount += toNexinvo.length;
+        }
+      }
+
+      // Save successful sync timestamp
+      const syncTimestamp = new Date().toISOString();
+      store.set('lastRealtimeSync', syncTimestamp);
+
+      logger.info(`Real-time sync (full books) completed: ${toTallyCount} to Tally, ${toNexinvoCount} to NexInvo, ${matched.length} matched`);
+
+      return {
+        success: true,
+        syncMode: 'vouchers',
+        to_tally_count: toTallyCount,
+        to_nexinvo_count: toNexinvoCount,
+        matched_count: matched.length,
+        errors_count: errorsCount,
+        is_first_sync: isFirstSync,
+        sync_period: { start: startDate, end: endDate },
+        preview_to_tally: toTally.length,
+        preview_to_nexinvo: toNexinvo.length,
+        tally_vouchers_fetched: tallyVouchers.length
+      };
+    }
+
+    // ===== Invoice mode (default — backward compatible) =====
     // First fetch sales vouchers from Tally
     let tallyVouchers = [];
     try {
@@ -1457,6 +1724,7 @@ ipcMain.handle('perform-realtime-sync', async () => {
 
     return {
       success: true,
+      syncMode: 'invoices',
       to_tally_count: toTallyCount,
       to_nexinvo_count: toNexinvoCount,
       matched_count: matched.length,
@@ -1474,8 +1742,31 @@ ipcMain.handle('perform-realtime-sync', async () => {
   }
 });
 
+// Auto Sync Config - Save sync mode and voucher type preferences
+ipcMain.handle('save-auto-sync-config', async (event, config) => {
+  try {
+    // config: { syncMode: 'invoices'|'vouchers', voucherTypes: [...] }
+    store.set('autoSyncConfig', config);
+    logger.info('Auto sync config saved:', JSON.stringify(config));
+    return { success: true };
+  } catch (error) {
+    logger.error('Failed to save auto sync config:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-auto-sync-config', async () => {
+  try {
+    const config = store.get('autoSyncConfig') || { syncMode: 'invoices', voucherTypes: [] };
+    return { success: true, config };
+  } catch (error) {
+    logger.error('Failed to get auto sync config:', error);
+    return { success: false, config: { syncMode: 'invoices', voucherTypes: [] } };
+  }
+});
+
 // Manual Sync Preview - Get comparison of invoices between Tally and NexInvo
-ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate }) => {
+ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate, syncMode, voucherTypes }) => {
   try {
     const serverUrl = store.get('serverUrl');
     const authToken = store.get('authToken');
@@ -1488,19 +1779,58 @@ ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate }) 
       throw new Error('Start date and end date are required');
     }
 
-    logger.info(`Manual sync preview: Fetching invoices from ${startDate} to ${endDate}`);
+    // Full Books mode: use Voucher-level comparison
+    if (syncMode === 'vouchers') {
+      logger.info(`Manual sync preview (Full Books): ${startDate} to ${endDate}, types: ${(voucherTypes || []).join(', ')}`);
 
-    // First fetch sales vouchers from Tally
+      let tallyVouchers = [];
+      try {
+        if (voucherTypes && voucherTypes.length > 0) {
+          tallyVouchers = await tallyConnector.getVouchersByTypes(startDate, endDate, voucherTypes);
+        } else {
+          tallyVouchers = await tallyConnector.getAllVouchers(startDate, endDate);
+        }
+        logger.info(`Fetched ${tallyVouchers.length} vouchers from Tally (full books)`);
+      } catch (tallyError) {
+        logger.warn('Could not fetch Tally vouchers:', tallyError.message);
+      }
+
+      const previewResponse = await fetchWithAuth(`${serverUrl}/api/tally-sync/two-way-voucher-preview/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tally_vouchers: tallyVouchers,
+          start_date: startDate,
+          end_date: endDate,
+          voucher_types: voucherTypes || []
+        })
+      });
+
+      if (!previewResponse.ok) {
+        const errData = await previewResponse.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to compare vouchers');
+      }
+
+      const previewResult = await previewResponse.json();
+      return {
+        success: true,
+        syncMode: 'vouchers',
+        to_tally: previewResult.to_tally || [],
+        to_nexinvo: previewResult.to_nexinvo || [],
+        matched: previewResult.matched || []
+      };
+    }
+
+    // Invoice mode (default / backward compat)
+    logger.info(`Manual sync preview (Invoices): ${startDate} to ${endDate}`);
+
     let tallyVouchers = [];
     try {
       tallyVouchers = await tallyConnector.getSalesVouchers(startDate, endDate);
       logger.info(`Fetched ${tallyVouchers.length} vouchers from Tally`);
     } catch (tallyError) {
       logger.warn('Could not fetch Tally vouchers:', tallyError.message);
-      // Continue with empty tally vouchers - will only show NexInvo invoices
     }
 
-    // Compare with NexInvo to find what needs syncing
     const previewResponse = await fetchWithAuth(`${serverUrl}/api/tally-sync/two-way-preview/`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1519,6 +1849,7 @@ ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate }) 
 
     return {
       success: true,
+      syncMode: 'invoices',
       to_tally: previewResult.to_tally || [],
       to_nexinvo: previewResult.to_nexinvo || [],
       matched: previewResult.matched || []
@@ -1529,8 +1860,8 @@ ipcMain.handle('get-manual-sync-preview', async (event, { startDate, endDate }) 
   }
 });
 
-// Execute Manual Sync - Sync selected invoices
-ipcMain.handle('execute-manual-sync', async (event, { toTallyIds, toNexinvoVouchers }) => {
+// Execute Manual Sync - Sync selected invoices/vouchers
+ipcMain.handle('execute-manual-sync', async (event, { toTallyIds, toTallyVouchers, toNexinvoVouchers, syncMode }) => {
   try {
     const serverUrl = store.get('serverUrl');
     const authToken = store.get('authToken');
@@ -1544,69 +1875,115 @@ ipcMain.handle('execute-manual-sync', async (event, { toTallyIds, toNexinvoVouch
     let errorsCount = 0;
     const errors = [];
 
-    // Sync selected NexInvo invoices to Tally
-    if (toTallyIds && toTallyIds.length > 0) {
-      try {
-        logger.info(`Syncing ${toTallyIds.length} invoices to Tally`);
-        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-invoices/`, {
-          method: 'POST',
-          body: JSON.stringify({ invoice_ids: toTallyIds })
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          toTallyCount = result.success_count || 0;
-          errorsCount += (result.failed_count || 0);
-          if (result.errors) {
-            errors.push(...result.errors);
+    // ========== FULL BOOKS MODE (Voucher-level) ==========
+    if (syncMode === 'vouchers') {
+      // NexInvo Vouchers → Tally: post each via tally-connector
+      if (toTallyVouchers && toTallyVouchers.length > 0) {
+        logger.info(`Syncing ${toTallyVouchers.length} vouchers to Tally (full books)`);
+        const syncedIds = [];
+        for (const voucher of toTallyVouchers) {
+          try {
+            await tallyConnector.syncVoucher(voucher);
+            syncedIds.push(voucher.id);
+            toTallyCount++;
+          } catch (error) {
+            errorsCount++;
+            errors.push(`Voucher ${voucher.voucher_number}: ${error.message}`);
           }
-        } else {
-          const errData = await response.json().catch(() => ({}));
-          errorsCount += toTallyIds.length;
-          errors.push(errData.error || 'Failed to sync to Tally');
         }
-      } catch (error) {
-        logger.error('Error syncing to Tally:', error);
-        errorsCount += toTallyIds.length;
-        errors.push(error.message);
+        // Mark as synced on backend
+        if (syncedIds.length > 0) {
+          try {
+            await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-vouchers-to-tally/`, {
+              method: 'POST',
+              body: JSON.stringify({ voucher_ids: syncedIds })
+            });
+          } catch (e) {
+            logger.warn('Could not mark vouchers as synced:', e.message);
+          }
+        }
       }
-    }
 
-    // Sync selected Tally vouchers to NexInvo
-    // Manual sync uses force_sync=true to skip duplicate checking (preview already filtered)
-    if (toNexinvoVouchers && toNexinvoVouchers.length > 0) {
-      try {
-        logger.info(`Syncing ${toNexinvoVouchers.length} vouchers to NexInvo (force_sync=true)`);
-        const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
-          method: 'POST',
-          body: JSON.stringify({ vouchers: toNexinvoVouchers, force_sync: true })
-        });
+      // Tally → NexInvo: import as Voucher+VoucherEntry
+      if (toNexinvoVouchers && toNexinvoVouchers.length > 0) {
+        try {
+          logger.info(`Syncing ${toNexinvoVouchers.length} vouchers to NexInvo (full books, force_sync=true)`);
+          const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-vouchers-to-nexinvo/`, {
+            method: 'POST',
+            body: JSON.stringify({ vouchers: toNexinvoVouchers, force_sync: true, auto_create_ledgers: true })
+          });
 
-        logger.info(`sync-to-nexinvo response status: ${response.status}`);
-
-        if (response.ok) {
-          const result = await response.json();
-          logger.info(`sync-to-nexinvo result: ${JSON.stringify(result)}`);
-          toNexinvoCount = result.created_count || 0;
-          errorsCount += (result.failed_count || 0);
-          errorsCount += (result.skipped_count || 0); // Also count skipped as info
-          if (result.errors && result.errors.length > 0) {
-            errors.push(...result.errors);
+          if (response.ok) {
+            const result = await response.json();
+            toNexinvoCount = result.created_count || 0;
+            if (result.errors && result.errors.length > 0) errors.push(...result.errors);
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            errorsCount += toNexinvoVouchers.length;
+            errors.push(errData.error || 'Failed to sync vouchers to NexInvo');
           }
-          // Add info about skipped/matched invoices
-          if (result.skipped_count > 0) {
-            errors.push(`${result.skipped_count} skipped (${result.matched_count || 0} matched by date/amount/client)`);
-          }
-        } else {
-          const errData = await response.json().catch(() => ({}));
-          logger.error(`sync-to-nexinvo error response: ${JSON.stringify(errData)}`);
+        } catch (error) {
+          logger.error('Error syncing vouchers to NexInvo:', error);
           errorsCount += toNexinvoVouchers.length;
-          errors.push(errData.error || 'Failed to sync to NexInvo');
+          errors.push(error.message);
         }
-      } catch (error) {
-        logger.error('Error syncing to NexInvo:', error);
-        errorsCount += toNexinvoVouchers.length;
-        errors.push(error.message);
+      }
+    } else {
+      // ========== INVOICE MODE (default / backward compat) ==========
+      // Sync selected NexInvo invoices to Tally
+      if (toTallyIds && toTallyIds.length > 0) {
+        try {
+          logger.info(`Syncing ${toTallyIds.length} invoices to Tally`);
+          const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-invoices/`, {
+            method: 'POST',
+            body: JSON.stringify({ invoice_ids: toTallyIds })
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            toTallyCount = result.success_count || 0;
+            errorsCount += (result.failed_count || 0);
+            if (result.errors) errors.push(...result.errors);
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            errorsCount += toTallyIds.length;
+            errors.push(errData.error || 'Failed to sync to Tally');
+          }
+        } catch (error) {
+          logger.error('Error syncing to Tally:', error);
+          errorsCount += toTallyIds.length;
+          errors.push(error.message);
+        }
+      }
+
+      // Sync selected Tally vouchers to NexInvo (Invoice model)
+      if (toNexinvoVouchers && toNexinvoVouchers.length > 0) {
+        try {
+          logger.info(`Syncing ${toNexinvoVouchers.length} vouchers to NexInvo (force_sync=true)`);
+          const response = await fetchWithAuth(`${serverUrl}/api/tally-sync/sync-to-nexinvo/`, {
+            method: 'POST',
+            body: JSON.stringify({ vouchers: toNexinvoVouchers, force_sync: true })
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            toNexinvoCount = result.created_count || 0;
+            errorsCount += (result.failed_count || 0);
+            errorsCount += (result.skipped_count || 0);
+            if (result.errors && result.errors.length > 0) errors.push(...result.errors);
+            if (result.skipped_count > 0) {
+              errors.push(`${result.skipped_count} skipped (${result.matched_count || 0} matched by date/amount/client)`);
+            }
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            errorsCount += toNexinvoVouchers.length;
+            errors.push(errData.error || 'Failed to sync to NexInvo');
+          }
+        } catch (error) {
+          logger.error('Error syncing to NexInvo:', error);
+          errorsCount += toNexinvoVouchers.length;
+          errors.push(error.message);
+        }
       }
     }
 

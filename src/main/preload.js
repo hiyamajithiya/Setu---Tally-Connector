@@ -42,8 +42,22 @@ contextBridge.exposeInMainWorld('setu', {
   fetchCompanyDetails: () => ipcRenderer.invoke('fetch-company-details'),
   syncCompanyToNexInvo: (data) => ipcRenderer.invoke('sync-company-to-nexinvo', data),
 
+  // Tally Sync - Complete Books Import (Account Groups, Ledgers with Balances, All Vouchers)
+  fetchAccountGroups: () => ipcRenderer.invoke('fetch-account-groups'),
+  fetchLedgersWithBalances: () => ipcRenderer.invoke('fetch-ledgers-with-balances'),
+  fetchAllVouchers: (params) => ipcRenderer.invoke('fetch-all-vouchers', params),
+  importAccountGroups: (groups) => ipcRenderer.invoke('import-account-groups', groups),
+  importLedgerAccounts: (ledgers) => ipcRenderer.invoke('import-ledger-accounts', ledgers),
+  importOpeningBalances: (balances) => ipcRenderer.invoke('import-opening-balances', balances),
+  previewImportVouchers: (params) => ipcRenderer.invoke('preview-import-vouchers', params),
+  importVouchers: (params) => ipcRenderer.invoke('import-vouchers', params),
+
   // Tally Sync - Real-Time Sync
   performRealtimeSync: () => ipcRenderer.invoke('perform-realtime-sync'),
+
+  // Auto Sync Config (sync mode + voucher type preferences)
+  saveAutoSyncConfig: (config) => ipcRenderer.invoke('save-auto-sync-config', config),
+  getAutoSyncConfig: () => ipcRenderer.invoke('get-auto-sync-config'),
 
   // Queue management
   getQueueStatus: () => ipcRenderer.invoke('get-queue-status'),
