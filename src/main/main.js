@@ -243,7 +243,7 @@ function createWindow() {
     resizable: true,
     frame: true,
     show: false, // Don't show until ready
-    icon: path.join(__dirname, '../../assets/icon.png'),
+    icon: path.join(__dirname, '../../assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
